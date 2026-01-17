@@ -1,0 +1,23 @@
+# Security and caching headers for Cloudflare Pages
+
+/*
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(self), microphone=(self), display-capture=(self)
+
+# Cache static assets aggressively
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Cache icons
+/icons/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Service worker - no cache
+/sw.js
+  Cache-Control: no-cache, no-store, must-revalidate
+
+# Manifest - short cache
+/manifest.json
+  Cache-Control: public, max-age=86400

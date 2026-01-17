@@ -1,20 +1,25 @@
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import { copyFileSync, mkdirSync, existsSync } from 'fs';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   root: 'public',
+  publicDir: false,
   build: {
     outDir: '../dist',
     emptyOutDir: true,
-    // Code splitting for better caching
     rollupOptions: {
       output: {
         manualChunks: {
-          // Separate PeerJS into its own chunk (lazy loaded anyway)
           peerjs: ['peerjs']
         }
       }
-    }
+    },
+    assetsInlineLimit: 0
   },
   server: {
     port: 3000,
@@ -23,65 +28,80 @@ export default defineConfig({
   plugins: [
     VitePWA({
       registerType: 'autoUpdate',
-      injectRegister: null, // We register SW manually in app.js
-      manifest: false, // Use existing manifest.json
+      injectRegister: null,
+      manifest: false,
       workbox: {
-        // Don't precache everything - use runtime caching
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
-        // Skip external resources
         globIgnores: ['**/node_modules/**'],
-        // Runtime caching strategies
         runtimeCaching: [
           {
-            // Google Fonts
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
             handler: 'CacheFirst',
             options: {
               cacheName: 'google-fonts-cache',
-              expiration: {
-                maxEntries: 10,
-                maxAgeSeconds: 60 * 60 * 24 * 365 // 1 year
-              },
-              cacheableResponse: {
-                statuses: [0, 200]
-              }
+              expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 365 },
+              cacheableResponse: { statuses: [0, 200] }
             }
           },
           {
-            // Font files
             urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
             handler: 'CacheFirst',
             options: {
               cacheName: 'gstatic-fonts-cache',
-              expiration: {
-                maxEntries: 10,
-                maxAgeSeconds: 60 * 60 * 24 * 365
-              },
-              cacheableResponse: {
-                statuses: [0, 200]
-              }
+              expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 365 },
+              cacheableResponse: { statuses: [0, 200] }
             }
           },
           {
-            // PeerJS cloud server - network only (real-time)
             urlPattern: /^https:\/\/.*\.peerjs\.com\/.*/i,
             handler: 'NetworkOnly'
           },
           {
-            // Google Apps Script API - network first
             urlPattern: /^https:\/\/script\.google\.com\/.*/i,
             handler: 'NetworkFirst',
             options: {
               cacheName: 'api-cache',
-              expiration: {
-                maxEntries: 50,
-                maxAgeSeconds: 60 * 5 // 5 minutes
-              },
+              expiration: { maxEntries: 50, maxAgeSeconds: 300 },
               networkTimeoutSeconds: 10
             }
           }
         ]
       }
-    })
+    }),
+    // Copy static files that need fixed paths (not hashed)
+    {
+      name: 'copy-static-files',
+      closeBundle() {
+        const publicDir = resolve(__dirname, 'public');
+        const distDir = resolve(__dirname, 'dist');
+        
+        // Root files
+        ['_redirects', '_headers', 'manifest.json'].forEach(file => {
+          const src = resolve(publicDir, file);
+          if (existsSync(src)) {
+            copyFileSync(src, resolve(distDir, file));
+            console.log(`✓ Copied: ${file}`);
+          }
+        });
+        
+        // Icons directory
+        const iconsDistDir = resolve(distDir, 'icons');
+        if (!existsSync(iconsDistDir)) mkdirSync(iconsDistDir, { recursive: true });
+        
+        const icons = [
+          'icon.svg', 'icon-72.png', 'icon-96.png', 'icon-128.png',
+          'icon-144.png', 'icon-152.png', 'icon-192.png', 'icon-384.png',
+          'icon-512.png', 'favicon-32.png', 'apple-touch-icon.png', 'favicon.png'
+        ];
+        
+        icons.forEach(file => {
+          const src = resolve(publicDir, 'icons', file);
+          if (existsSync(src)) {
+            copyFileSync(src, resolve(iconsDistDir, file));
+            console.log(`✓ Copied: icons/${file}`);
+          }
+        });
+      }
+    }
   ]
 });

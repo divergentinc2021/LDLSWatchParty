@@ -1,15 +1,17 @@
 // ============================================
-// Netlify Function: Send Email
+// Cloudflare Pages Function: Send Email
 // Uses Resend API (free tier: 100 emails/day)
 // ============================================
 
 // To use this:
 // 1. Sign up at resend.com
 // 2. Get API key
-// 3. Add RESEND_API_KEY to Netlify environment variables
+// 3. Add RESEND_API_KEY in Cloudflare Pages Settings > Environment Variables
 // 4. Verify your domain or use onboarding@resend.dev for testing
 
-exports.handler = async (event) => {
+export async function onRequestPost(context) {
+  const { request, env } = context;
+  
   // CORS headers
   const headers = {
     'Access-Control-Allow-Origin': '*',
@@ -17,31 +19,28 @@ exports.handler = async (event) => {
     'Content-Type': 'application/json'
   };
 
-  // Handle preflight
-  if (event.httpMethod === 'OPTIONS') {
-    return { statusCode: 200, headers, body: '' };
-  }
-
-  if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, headers, body: JSON.stringify({ error: 'Method not allowed' }) };
-  }
-
   try {
-    const { to, name, code, token, isHost, hasPassword } = JSON.parse(event.body);
+    const { to, name, code, token, isHost, hasPassword } = await request.json();
 
     if (!to || !code || !token) {
-      return { statusCode: 400, headers, body: JSON.stringify({ error: 'Missing required fields' }) };
+      return new Response(
+        JSON.stringify({ error: 'Missing required fields' }),
+        { status: 400, headers }
+      );
     }
 
-    const RESEND_API_KEY = process.env.RESEND_API_KEY;
+    const RESEND_API_KEY = env.RESEND_API_KEY;
     
     if (!RESEND_API_KEY) {
       console.error('RESEND_API_KEY not configured');
-      // Return success anyway - email is optional backup
-      return { statusCode: 200, headers, body: JSON.stringify({ success: true, message: 'Email skipped (not configured)' }) };
+      return new Response(
+        JSON.stringify({ success: true, message: 'Email skipped (not configured)' }),
+        { status: 200, headers }
+      );
     }
 
-    const APP_URL = process.env.URL || 'https://ldlswatchparty.netlify.app';
+    // Cloudflare provides the URL via CF_PAGES_URL or you can set a custom APP_URL
+    const APP_URL = env.APP_URL || `https://${context.request.headers.get('host')}`;
     const joinUrl = `${APP_URL}/${code}-${token}?email=${encodeURIComponent(to)}`;
     
     const subject = isHost ? 'Your Watch Party - Rejoin Link' : 'Watch Party - Rejoin Link';
@@ -83,15 +82,34 @@ exports.handler = async (event) => {
 
     if (!response.ok) {
       console.error('Resend error:', result);
-      // Return success anyway - email is optional
-      return { statusCode: 200, headers, body: JSON.stringify({ success: true, message: 'Email send attempted' }) };
+      return new Response(
+        JSON.stringify({ success: true, message: 'Email send attempted' }),
+        { status: 200, headers }
+      );
     }
 
-    return { statusCode: 200, headers, body: JSON.stringify({ success: true, emailId: result.id }) };
+    return new Response(
+      JSON.stringify({ success: true, emailId: result.id }),
+      { status: 200, headers }
+    );
 
   } catch (error) {
     console.error('Email function error:', error);
-    // Return success - email is optional backup feature
-    return { statusCode: 200, headers, body: JSON.stringify({ success: true, message: 'Email skipped' }) };
+    return new Response(
+      JSON.stringify({ success: true, message: 'Email skipped' }),
+      { status: 200, headers }
+    );
   }
-};
+}
+
+// Handle CORS preflight
+export async function onRequestOptions() {
+  return new Response(null, {
+    status: 200,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Content-Type',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS'
+    }
+  });
+}

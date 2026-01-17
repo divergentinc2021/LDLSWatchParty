@@ -1,0 +1,9 @@
+name = "watchparty"
+compatibility_date = "2024-01-01"
+
+# Build settings
+[build]
+command = "npm run build"
+
+# For Pages (not Workers)
+pages_build_output_dir = "dist"
