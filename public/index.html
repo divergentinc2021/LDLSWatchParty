@@ -131,7 +131,7 @@
       </div>
     </section>
     
-    <!-- Pending View (waiting for email) -->
+    <!-- Pending View (Check Email) -->
     <section id="view-pending" class="view">
       <div class="pending-container">
         <div class="pending-card">
@@ -142,12 +142,15 @@
             </svg>
           </div>
           <h2>Check Your Email</h2>
-          <p>We've sent a link to <strong id="pending-email">your email</strong></p>
-          <p class="pending-hint">Click the link in your email to enter the room</p>
-          <div class="pending-code">
-            <span>Room Code:</span>
-            <code id="pending-code">XXXXX</code>
+          <p>We've sent you a link to join the watch party.</p>
+          
+          <div class="pending-code-box">
+            <span class="pending-code-label">Room Code</span>
+            <span id="pending-room-code" class="pending-code">XXXXX</span>
           </div>
+          
+          <p class="pending-hint">Click the link in your email to enter the room, or share the code with friends.</p>
+          
           <button id="btn-back-landing" class="btn btn-ghost">Back to Home</button>
         </div>
       </div>
@@ -201,6 +204,7 @@
           
           <!-- Video Area -->
           <div class="video-area">
+            <!-- Screen Share -->
             <div class="screen-container">
               <video id="screen-video" autoplay playsinline></video>
               <div id="screen-placeholder" class="screen-placeholder">
@@ -213,6 +217,7 @@
               </div>
             </div>
             
+            <!-- Webcam Grid -->
             <div id="webcam-grid" class="webcam-grid">
               <div id="local-tile" class="webcam-tile local">
                 <video id="local-video" autoplay playsinline muted></video>
@@ -223,6 +228,7 @@
           
           <!-- Sidebar -->
           <aside class="sidebar">
+            <!-- Participants Panel -->
             <div class="participants-panel">
               <div class="panel-header">
                 <h3>Participants</h3>
@@ -230,6 +236,7 @@
               <div id="participants-list" class="participants-list"></div>
             </div>
             
+            <!-- Chat Panel -->
             <div class="chat-panel">
               <div class="chat-header">
                 <h3>Chat</h3>
@@ -306,6 +313,7 @@
             </button>
           </div>
           
+          <!-- Share Link -->
           <div class="share-link-bar">
             <span>Invite friends:</span>
             <code id="share-url">ldlswatchparty.netlify.app/XXXXX</code>
