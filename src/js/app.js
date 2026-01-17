@@ -1,66 +1,19 @@
 // ============================================
-// Watch Party - Main Application Controller
+// Watch Party - Main Application
 // ============================================
 
-import { initializeApp } from 'firebase/app';
-import { firebaseConfig } from './firebase-config.js';
-
-// Import modules
-import { 
-  initAuth,
-  waitForAuthReady,
-  onAuthChange, 
-  getUser, 
-  getUserDisplayName,
-  sendAuthLink, 
-  handleEmailLinkRedirect,
-  logout,
-  hasPendingAuth
-} from './auth.js';
-
-import { 
-  initRoom, 
-  createRoom, 
-  joinRoom, 
-  validateRoomCode,
-  addParticipant,
-  leaveRoom,
-  subscribeToParticipants,
-  sendEmailInvite,
-  getCurrentRoom
-} from './room.js';
-
-import { 
-  initChat, 
-  sendMessage, 
-  sendSystemMessage,
-  subscribeToChat, 
-  unsubscribeFromChat,
-  formatTime
-} from './chat.js';
-
-import { 
-  initWebRTC, 
-  setCallbacks,
-  joinMesh, 
-  leaveMesh,
-  getLocalStream,
-  toggleMic,
-  toggleCamera,
-  startScreenShare,
-  stopScreenShare,
-  getScreenStream,
-  getLocalMediaStream
-} from './webrtc.js';
+import * as api from './api.js';
+import * as webrtc from './webrtc.js';
 
 // ============================================
 // State
 // ============================================
 
 let currentView = 'landing';
-let pendingAction = null; // 'create' | 'join'
-let pendingRoomCode = null;
-let participants = [];
+let currentRoom = null;
+let currentUser = null;
+let isHost = false;
+let chatMessages = [];
 
 // ============================================
 // DOM Elements
@@ -78,50 +31,49 @@ const btnJoin = document.getElementById('btn-join');
 const inputCode = document.getElementById('input-code');
 
 // Auth
-const btnBackLanding = document.getElementById('btn-back-landing');
+const btnBack = document.getElementById('btn-back');
 const authTitle = document.getElementById('auth-title');
 const authSubtitle = document.getElementById('auth-subtitle');
 const authForm = document.getElementById('auth-form');
-const authPending = document.getElementById('auth-pending');
+const authSuccess = document.getElementById('auth-success');
 const authError = document.getElementById('auth-error');
 const inputEmail = document.getElementById('input-email');
-const btnSendLink = document.getElementById('btn-send-link');
+const inputName = document.getElementById('input-name');
+const btnSubmit = document.getElementById('btn-submit');
 const btnResend = document.getElementById('btn-resend');
-const pendingEmail = document.getElementById('pending-email');
-const pendingRoomInfo = document.getElementById('pending-room-info');
-const pendingRoomCodeDisplay = document.getElementById('pending-room-code');
+const successEmail = document.getElementById('success-email');
+const displayCode = document.getElementById('display-code');
+const btnCopyCode = document.getElementById('btn-copy-code');
+const roomCodeDisplay = document.getElementById('room-code-display');
 const errorMessage = document.getElementById('error-message');
 
 // Room
-const displayRoomCode = document.getElementById('display-room-code');
-const btnCopyCode = document.getElementById('btn-copy-code');
+const headerRoomCode = document.getElementById('header-room-code');
+const btnCopyRoom = document.getElementById('btn-copy-room');
 const btnInvite = document.getElementById('btn-invite');
 const btnLeave = document.getElementById('btn-leave');
 const participantCount = document.getElementById('participant-count');
-
-// Video
 const screenVideo = document.getElementById('screen-video');
 const screenPlaceholder = document.getElementById('screen-placeholder');
 const localVideo = document.getElementById('local-video');
 const webcamGrid = document.getElementById('webcam-grid');
-
-// Chat
-const chatMessages = document.getElementById('chat-messages');
+const chatMessagesEl = document.getElementById('chat-messages');
 const chatForm = document.getElementById('chat-form');
 const chatInput = document.getElementById('chat-input');
+const btnMic = document.getElementById('btn-mic');
+const btnCam = document.getElementById('btn-cam');
+const btnScreen = document.getElementById('btn-screen');
 
-// Controls
-const btnToggleMic = document.getElementById('btn-toggle-mic');
-const btnToggleCam = document.getElementById('btn-toggle-cam');
-const btnToggleScreen = document.getElementById('btn-toggle-screen');
-
-// Invite Modal
+// Modal
 const inviteModal = document.getElementById('invite-modal');
-const btnCloseInvite = document.getElementById('btn-close-invite');
+const btnCloseModal = document.getElementById('btn-close-modal');
+const modalRoomCode = document.getElementById('modal-room-code');
+const btnCopyModal = document.getElementById('btn-copy-modal');
+const inviteForm = document.getElementById('invite-form');
 const inviteEmail = document.getElementById('invite-email');
-const btnSendInvite = document.getElementById('btn-send-invite');
-const inviteCodeText = document.getElementById('invite-code-text');
-const btnCopyInvite = document.getElementById('btn-copy-invite');
+
+// Toast
+const toastContainer = document.getElementById('toast-container');
 
 // ============================================
 // View Management
@@ -135,37 +87,51 @@ function showView(viewName) {
   currentView = viewName;
 }
 
+function resetAuthView() {
+  authForm.classList.remove('hidden');
+  authSuccess.classList.add('hidden');
+  authError.classList.add('hidden');
+  inputEmail.value = '';
+  inputName.value = '';
+  btnSubmit.disabled = false;
+  btnSubmit.querySelector('.btn-text').classList.remove('hidden');
+  btnSubmit.querySelector('.btn-loading').classList.add('hidden');
+}
+
+function showAuthLoading() {
+  btnSubmit.disabled = true;
+  btnSubmit.querySelector('.btn-text').classList.add('hidden');
+  btnSubmit.querySelector('.btn-loading').classList.remove('hidden');
+}
+
+function hideAuthLoading() {
+  btnSubmit.disabled = false;
+  btnSubmit.querySelector('.btn-text').classList.remove('hidden');
+  btnSubmit.querySelector('.btn-loading').classList.add('hidden');
+}
+
+function showAuthSuccess(email, code = null) {
+  authForm.classList.add('hidden');
+  authSuccess.classList.remove('hidden');
+  authError.classList.add('hidden');
+  successEmail.textContent = email;
+  
+  if (code) {
+    displayCode.textContent = code;
+    roomCodeDisplay.classList.remove('hidden');
+  } else {
+    roomCodeDisplay.classList.add('hidden');
+  }
+}
+
 function showAuthError(message) {
   authError.classList.remove('hidden');
   errorMessage.textContent = message;
+  hideAuthLoading();
 }
 
 function hideAuthError() {
   authError.classList.add('hidden');
-}
-
-function showAuthPending(email, roomCode = null) {
-  authForm.classList.add('hidden');
-  authPending.classList.remove('hidden');
-  pendingEmail.textContent = email;
-  
-  // Show room code if joining an existing room
-  if (roomCode && pendingRoomInfo && pendingRoomCodeDisplay) {
-    pendingRoomInfo.classList.remove('hidden');
-    pendingRoomCodeDisplay.textContent = roomCode;
-  } else if (pendingRoomInfo) {
-    pendingRoomInfo.classList.add('hidden');
-  }
-}
-
-function resetAuthView() {
-  authForm.classList.remove('hidden');
-  authPending.classList.add('hidden');
-  if (pendingRoomInfo) {
-    pendingRoomInfo.classList.add('hidden');
-  }
-  hideAuthError();
-  inputEmail.value = '';
 }
 
 // ============================================
@@ -176,7 +142,7 @@ function showToast(message, type = 'info') {
   const toast = document.createElement('div');
   toast.className = `toast ${type}`;
   toast.textContent = message;
-  document.body.appendChild(toast);
+  toastContainer.appendChild(toast);
   
   setTimeout(() => {
     toast.remove();
@@ -187,47 +153,47 @@ function showToast(message, type = 'info') {
 // Landing Actions
 // ============================================
 
+let pendingAction = null; // 'create' | 'join'
+let pendingRoomCode = null;
+
 btnCreate.addEventListener('click', () => {
-  console.log('Create room clicked');
   pendingAction = 'create';
   pendingRoomCode = null;
-  authTitle.textContent = 'Enter your email';
-  authSubtitle.textContent = "We'll send you a link to create your room";
+  authTitle.textContent = 'Create your room';
+  authSubtitle.textContent = "We'll email you an access link with your room code";
   resetAuthView();
   showView('auth');
 });
 
 btnJoin.addEventListener('click', async () => {
   const code = inputCode.value.trim().toUpperCase();
-  console.log('Join room clicked with code:', code);
   
   if (code.length !== 5) {
     showToast('Please enter a 5-character code', 'error');
     return;
   }
   
-  // Validate code exists
+  // Validate room exists
   try {
-    const valid = await validateRoomCode(code);
-    if (!valid) {
-      showToast('Room not found. Check your code.', 'error');
+    const result = await api.validateRoom(code);
+    if (!result.valid) {
+      showToast(result.error || 'Room not found', 'error');
       return;
     }
   } catch (err) {
-    console.error('Error validating room code:', err);
     showToast('Error checking room. Please try again.', 'error');
     return;
   }
   
   pendingAction = 'join';
   pendingRoomCode = code;
-  authTitle.textContent = 'Enter your email';
-  authSubtitle.textContent = `We'll send you a link to join room ${code}`;
+  authTitle.textContent = 'Join room';
+  authSubtitle.textContent = `Enter your email to join room ${code}`;
   resetAuthView();
   showView('auth');
 });
 
-// Auto-uppercase code input
+// Auto-uppercase room code input
 inputCode.addEventListener('input', (e) => {
   e.target.value = e.target.value.toUpperCase();
 });
@@ -236,14 +202,17 @@ inputCode.addEventListener('input', (e) => {
 // Auth Actions
 // ============================================
 
-btnBackLanding.addEventListener('click', () => {
+btnBack.addEventListener('click', () => {
   pendingAction = null;
   pendingRoomCode = null;
   showView('landing');
 });
 
-btnSendLink.addEventListener('click', async () => {
+authForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  
   const email = inputEmail.value.trim();
+  const name = inputName.value.trim();
   
   if (!email || !email.includes('@')) {
     showAuthError('Please enter a valid email address');
@@ -251,33 +220,50 @@ btnSendLink.addEventListener('click', async () => {
   }
   
   hideAuthError();
-  btnSendLink.disabled = true;
-  btnSendLink.textContent = 'Sending...';
+  showAuthLoading();
   
   try {
-    const isHost = pendingAction === 'create';
-    console.log('Sending auth link - email:', email, 'roomCode:', pendingRoomCode, 'isHost:', isHost);
-    await sendAuthLink(email, pendingRoomCode, isHost);
-    // Pass room code to show it in the pending screen
-    showAuthPending(email, pendingRoomCode);
-    showToast('Check your email for the magic link!', 'success');
+    let result;
+    
+    if (pendingAction === 'create') {
+      result = await api.createRoom(email, name);
+      showAuthSuccess(email, result.code);
+      showToast('Room created! Check your email.', 'success');
+    } else {
+      result = await api.joinRoom(pendingRoomCode, email, name);
+      showAuthSuccess(email, pendingRoomCode);
+      showToast('Check your email for the access link!', 'success');
+    }
+    
+    // Store for potential direct entry
+    localStorage.setItem('wp_email', email);
+    localStorage.setItem('wp_name', name || email.split('@')[0]);
+    localStorage.setItem('wp_room', result.code || pendingRoomCode);
+    
   } catch (err) {
     console.error('Auth error:', err);
-    showAuthError(err.message || 'Failed to send link. Please try again.');
-  } finally {
-    btnSendLink.disabled = false;
-    btnSendLink.textContent = 'Send Magic Link';
+    showAuthError(err.message || 'Something went wrong. Please try again.');
   }
 });
 
 btnResend.addEventListener('click', async () => {
-  const email = pendingEmail.textContent;
+  const email = localStorage.getItem('wp_email');
+  const name = localStorage.getItem('wp_name');
+  
+  if (!email) {
+    showToast('Please try again from the beginning', 'error');
+    return;
+  }
+  
   btnResend.disabled = true;
   
   try {
-    const isHost = pendingAction === 'create';
-    await sendAuthLink(email, pendingRoomCode, isHost);
-    showToast('Link sent!', 'success');
+    if (pendingAction === 'create') {
+      await api.createRoom(email, name);
+    } else {
+      await api.joinRoom(pendingRoomCode, email, name);
+    }
+    showToast('Email sent!', 'success');
   } catch (err) {
     showToast('Failed to resend. Please try again.', 'error');
   } finally {
@@ -285,196 +271,175 @@ btnResend.addEventListener('click', async () => {
   }
 });
 
+btnCopyCode.addEventListener('click', () => {
+  const code = displayCode.textContent;
+  navigator.clipboard.writeText(code);
+  showToast('Code copied!', 'success');
+});
+
 // ============================================
-// Room Actions
+// Room Entry
 // ============================================
 
-async function enterRoom(roomCode, isHost) {
-  console.log('Entering room - roomCode:', roomCode, 'isHost:', isHost);
+async function enterRoom(roomCode, email, userName, hostStatus) {
+  console.log('Entering room:', roomCode, 'as', userName, 'host:', hostStatus);
   
-  const user = getUser();
-  if (!user) {
-    console.error('No user logged in!');
-    showToast('Authentication required', 'error');
+  currentRoom = roomCode;
+  currentUser = { email, name: userName };
+  isHost = hostStatus;
+  
+  // Update UI
+  document.body.classList.toggle('is-host', isHost);
+  headerRoomCode.textContent = roomCode;
+  modalRoomCode.textContent = roomCode;
+  
+  // Generate a unique ID for this user
+  const odId = generateUserId();
+  
+  try {
+    // Initialize WebRTC
+    webrtc.setCallbacks({
+      onPeerOpen: (id) => {
+        console.log('Peer ready:', id);
+        addSystemMessage(`You joined the party`);
+      },
+      onPeerError: (err) => {
+        console.error('Peer error:', err);
+        showToast('Connection error. Please refresh.', 'error');
+      },
+      onConnection: (peerId) => {
+        updateParticipantCount();
+        const peerName = extractNameFromPeerId(peerId);
+        addSystemMessage(`${peerName} joined`);
+      },
+      onDisconnection: (peerId) => {
+        removeRemoteVideo(peerId);
+        updateParticipantCount();
+        const peerName = extractNameFromPeerId(peerId);
+        addSystemMessage(`${peerName} left`);
+      },
+      onRemoteStream: (peerId, stream) => {
+        addRemoteVideo(peerId, stream);
+      },
+      onScreenStream: (peerId, stream) => {
+        screenVideo.srcObject = stream;
+        screenPlaceholder.classList.add('hidden');
+      },
+      onChatMessage: (peerId, data) => {
+        addChatMessage(data.displayName, data.text, data.timestamp);
+      }
+    });
+    
+    await webrtc.initPeer(roomCode, odId);
+    
+    // Connect to other participants
+    // In a real app, you'd get this list from the server
+    // For now, we'll discover peers through PeerJS
+    
+    showView('room');
+    showToast(`Welcome to room ${roomCode}!`, 'success');
+    
+  } catch (err) {
+    console.error('Failed to enter room:', err);
+    showToast('Failed to join room. Please try again.', 'error');
     showView('landing');
+  }
+}
+
+function generateUserId() {
+  return Math.random().toString(36).substring(2, 10);
+}
+
+function extractNameFromPeerId(peerId) {
+  // peerId format: ROOMCODE-userid
+  const parts = peerId.split('-');
+  return parts[1] || 'Guest';
+}
+
+// ============================================
+// Room UI
+// ============================================
+
+function updateParticipantCount() {
+  const count = webrtc.getConnectedPeers().length + 1; // +1 for self
+  participantCount.querySelector('span:last-child').textContent = count;
+}
+
+function addRemoteVideo(peerId, stream) {
+  // Check if already exists
+  if (document.getElementById(`remote-${peerId}`)) {
+    const video = document.getElementById(`remote-${peerId}`).querySelector('video');
+    video.srcObject = stream;
     return;
   }
   
-  console.log('User:', user.email, user.uid);
+  const tile = document.createElement('div');
+  tile.id = `remote-${peerId}`;
+  tile.className = 'webcam-tile remote';
   
-  try {
-    // Set host class on body
-    document.body.classList.toggle('is-host', isHost);
-    
-    // Join or create room in Firestore
-    let room;
-    if (isHost) {
-      console.log('Creating new room...');
-      room = await createRoom(user.email, user.uid);
-      console.log('Room created:', room.code);
-    } else {
-      console.log('Joining existing room:', roomCode);
-      room = await joinRoom(roomCode, user.email, user.uid);
-      console.log('Joined room:', room.code);
-    }
-    
-    // Update UI
-    displayRoomCode.textContent = room.code;
-    inviteCodeText.textContent = room.code;
-    
-    // Add ourselves as participant
-    await addParticipant(room.code, user.uid, user.email);
-    console.log('Added as participant');
-    
-    // Subscribe to participants
-    subscribeToParticipants(room.code, (parts) => {
-      participants = parts;
-      updateParticipantCount();
-    });
-    
-    // Subscribe to chat
-    subscribeToChat(room.code, renderMessages);
-    
-    // Send join message
-    await sendSystemMessage(room.code, `${getUserDisplayName()} joined the party`);
-    
-    // Join WebRTC mesh
-    setCallbacks({
-      onStream: handleRemoteStream,
-      onDisconnect: handleRemoteDisconnect,
-      onScreen: handleScreenStream
-    });
-    await joinMesh(room.code, user.uid, isHost);
-    console.log('Joined WebRTC mesh');
-    
-    showView('room');
-    showToast(`Welcome to room ${room.code}!`, 'success');
-    
-  } catch (err) {
-    console.error('Error entering room:', err);
-    showToast(err.message || 'Failed to enter room', 'error');
-    showView('landing');
-  }
+  const video = document.createElement('video');
+  video.autoplay = true;
+  video.playsInline = true;
+  video.srcObject = stream;
+  
+  const nameEl = document.createElement('span');
+  nameEl.className = 'webcam-name';
+  nameEl.textContent = extractNameFromPeerId(peerId);
+  
+  tile.appendChild(video);
+  tile.appendChild(nameEl);
+  webcamGrid.appendChild(tile);
 }
 
-function updateParticipantCount() {
-  const count = participants.filter(p => p.isOnline).length;
-  participantCount.textContent = `${count} watching`;
+function removeRemoteVideo(peerId) {
+  const tile = document.getElementById(`remote-${peerId}`);
+  if (tile) tile.remove();
 }
-
-btnLeave.addEventListener('click', async () => {
-  await handleLeaveRoom();
-});
-
-async function handleLeaveRoom() {
-  const user = getUser();
-  const room = getCurrentRoom();
-  
-  if (room && user) {
-    try {
-      await sendSystemMessage(room.code, `${getUserDisplayName()} left the party`);
-      await leaveRoom(room.code, user.uid);
-    } catch (err) {
-      console.error('Error leaving room:', err);
-    }
-  }
-  
-  await leaveMesh();
-  unsubscribeFromChat();
-  
-  // Reset controls
-  btnToggleMic.dataset.active = 'false';
-  btnToggleCam.dataset.active = 'false';
-  btnToggleScreen.dataset.active = 'false';
-  
-  // Clear video elements
-  localVideo.srcObject = null;
-  screenVideo.srcObject = null;
-  screenPlaceholder.classList.remove('hidden');
-  
-  // Remove remote video tiles
-  document.querySelectorAll('.webcam-tile.remote').forEach(el => el.remove());
-  
-  document.body.classList.remove('is-host');
-  showView('landing');
-}
-
-// Copy room code
-btnCopyCode.addEventListener('click', () => {
-  navigator.clipboard.writeText(displayRoomCode.textContent);
-  showToast('Code copied!', 'success');
-});
-
-// ============================================
-// Invite Modal
-// ============================================
-
-btnInvite.addEventListener('click', () => {
-  inviteModal.classList.remove('hidden');
-});
-
-btnCloseInvite.addEventListener('click', () => {
-  inviteModal.classList.add('hidden');
-});
-
-inviteModal.querySelector('.modal-backdrop').addEventListener('click', () => {
-  inviteModal.classList.add('hidden');
-});
-
-btnSendInvite.addEventListener('click', () => {
-  const email = inviteEmail.value.trim();
-  if (!email) return;
-  
-  const room = getCurrentRoom();
-  sendEmailInvite(email, room.code, getUserDisplayName());
-  inviteEmail.value = '';
-  showToast('Invite email opened', 'success');
-});
-
-btnCopyInvite.addEventListener('click', () => {
-  navigator.clipboard.writeText(inviteCodeText.textContent);
-  showToast('Code copied!', 'success');
-});
 
 // ============================================
 // Chat
 // ============================================
 
-function renderMessages(messages) {
-  chatMessages.innerHTML = messages.map(msg => {
+function addChatMessage(sender, text, timestamp) {
+  chatMessages.push({ sender, text, timestamp });
+  renderChatMessages();
+}
+
+function addSystemMessage(text) {
+  chatMessages.push({ type: 'system', text, timestamp: Date.now() });
+  renderChatMessages();
+}
+
+function renderChatMessages() {
+  chatMessagesEl.innerHTML = chatMessages.map(msg => {
     if (msg.type === 'system') {
-      return `
-        <div class="chat-message system">
-          <span class="text">${escapeHtml(msg.text)}</span>
-        </div>
-      `;
+      return `<div class="chat-message system"><span class="text">${escapeHtml(msg.text)}</span></div>`;
     }
-    
     return `
       <div class="chat-message">
-        <span class="sender">${escapeHtml(msg.displayName)}</span>
+        <span class="sender">${escapeHtml(msg.sender)}</span>
         <span class="text">${escapeHtml(msg.text)}</span>
         <span class="time">${formatTime(msg.timestamp)}</span>
       </div>
     `;
   }).join('');
   
-  // Scroll to bottom
-  chatMessages.scrollTop = chatMessages.scrollHeight;
+  chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
 }
 
-chatForm.addEventListener('submit', async (e) => {
+chatForm.addEventListener('submit', (e) => {
   e.preventDefault();
   
   const text = chatInput.value.trim();
   if (!text) return;
   
-  const user = getUser();
-  const room = getCurrentRoom();
-  
   chatInput.value = '';
   
-  await sendMessage(room.code, user.uid, getUserDisplayName(), text);
+  // Send to peers
+  const message = webrtc.sendChatMessage(currentUser.name, text);
+  
+  // Add locally
+  addChatMessage(currentUser.name, text, message.timestamp);
 });
 
 function escapeHtml(text) {
@@ -483,61 +448,64 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+function formatTime(timestamp) {
+  const date = new Date(timestamp);
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
 // ============================================
 // Media Controls
 // ============================================
 
-btnToggleMic.addEventListener('click', async () => {
-  const isActive = btnToggleMic.dataset.active === 'true';
+btnMic.addEventListener('click', async () => {
+  const isActive = btnMic.dataset.active === 'true';
   
   if (!isActive) {
     try {
-      await getLocalStream(true, btnToggleCam.dataset.active === 'true');
-      const stream = getLocalMediaStream();
+      const stream = await webrtc.getLocalStream(true, btnCam.dataset.active === 'true');
       localVideo.srcObject = stream;
-      btnToggleMic.dataset.active = 'true';
+      btnMic.dataset.active = 'true';
     } catch (err) {
       showToast('Could not access microphone', 'error');
     }
   } else {
-    toggleMic(false);
-    btnToggleMic.dataset.active = 'false';
+    webrtc.toggleMic(false);
+    btnMic.dataset.active = 'false';
   }
 });
 
-btnToggleCam.addEventListener('click', async () => {
-  const isActive = btnToggleCam.dataset.active === 'true';
+btnCam.addEventListener('click', async () => {
+  const isActive = btnCam.dataset.active === 'true';
   
   if (!isActive) {
     try {
-      await getLocalStream(btnToggleMic.dataset.active === 'true', true);
-      const stream = getLocalMediaStream();
+      const stream = await webrtc.getLocalStream(btnMic.dataset.active === 'true', true);
       localVideo.srcObject = stream;
-      btnToggleCam.dataset.active = 'true';
+      btnCam.dataset.active = 'true';
     } catch (err) {
       showToast('Could not access camera', 'error');
     }
   } else {
-    toggleCamera(false);
-    btnToggleCam.dataset.active = 'false';
+    webrtc.toggleCamera(false);
+    btnCam.dataset.active = 'false';
   }
 });
 
-btnToggleScreen.addEventListener('click', async () => {
-  const isActive = btnToggleScreen.dataset.active === 'true';
+btnScreen.addEventListener('click', async () => {
+  const isActive = btnScreen.dataset.active === 'true';
   
   if (!isActive) {
     try {
-      const stream = await startScreenShare();
+      const stream = await webrtc.startScreenShare();
       screenVideo.srcObject = stream;
       screenPlaceholder.classList.add('hidden');
-      btnToggleScreen.dataset.active = 'true';
+      btnScreen.dataset.active = 'true';
       
-      // Listen for user stopping via browser UI
+      // Handle user stopping via browser UI
       stream.getVideoTracks()[0].onended = () => {
         screenVideo.srcObject = null;
         screenPlaceholder.classList.remove('hidden');
-        btnToggleScreen.dataset.active = 'false';
+        btnScreen.dataset.active = 'false';
       };
     } catch (err) {
       if (err.name !== 'NotAllowedError') {
@@ -545,52 +513,115 @@ btnToggleScreen.addEventListener('click', async () => {
       }
     }
   } else {
-    stopScreenShare();
+    webrtc.stopScreenShare();
     screenVideo.srcObject = null;
     screenPlaceholder.classList.remove('hidden');
-    btnToggleScreen.dataset.active = 'false';
+    btnScreen.dataset.active = 'false';
   }
 });
 
 // ============================================
-// WebRTC Callbacks
+// Room Actions
 // ============================================
 
-function handleRemoteStream(odId, stream) {
-  // Check if tile already exists
-  let tile = document.getElementById(`remote-${odId}`);
+btnCopyRoom.addEventListener('click', () => {
+  navigator.clipboard.writeText(currentRoom);
+  showToast('Code copied!', 'success');
+});
+
+btnInvite.addEventListener('click', () => {
+  inviteModal.classList.remove('hidden');
+});
+
+btnCloseModal.addEventListener('click', () => {
+  inviteModal.classList.add('hidden');
+});
+
+inviteModal.querySelector('.modal-backdrop').addEventListener('click', () => {
+  inviteModal.classList.add('hidden');
+});
+
+btnCopyModal.addEventListener('click', () => {
+  navigator.clipboard.writeText(currentRoom);
+  showToast('Code copied!', 'success');
+});
+
+inviteForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
   
-  if (!tile) {
-    tile = document.createElement('div');
-    tile.id = `remote-${odId}`;
-    tile.className = 'webcam-tile remote';
-    tile.innerHTML = `
-      <video autoplay playsinline></video>
-      <span class="webcam-name">Guest</span>
-    `;
-    webcamGrid.appendChild(tile);
+  const email = inviteEmail.value.trim();
+  if (!email) return;
+  
+  try {
+    await api.joinRoom(currentRoom, email, '');
+    inviteEmail.value = '';
+    showToast('Invite sent!', 'success');
+  } catch (err) {
+    showToast('Failed to send invite', 'error');
   }
+});
+
+btnLeave.addEventListener('click', () => {
+  leaveRoom();
+});
+
+function leaveRoom() {
+  webrtc.disconnect();
   
-  const video = tile.querySelector('video');
-  video.srcObject = stream;
+  currentRoom = null;
+  currentUser = null;
+  isHost = false;
+  chatMessages = [];
   
-  // Update name from participants
-  const participant = participants.find(p => p.odId === odId);
-  if (participant) {
-    tile.querySelector('.webcam-name').textContent = participant.displayName;
-  }
+  // Reset UI
+  document.body.classList.remove('is-host');
+  btnMic.dataset.active = 'false';
+  btnCam.dataset.active = 'false';
+  btnScreen.dataset.active = 'false';
+  localVideo.srcObject = null;
+  screenVideo.srcObject = null;
+  screenPlaceholder.classList.remove('hidden');
+  chatMessagesEl.innerHTML = '';
+  
+  // Remove remote videos
+  document.querySelectorAll('.webcam-tile.remote').forEach(el => el.remove());
+  
+  showView('landing');
 }
 
-function handleRemoteDisconnect(odId) {
-  const tile = document.getElementById(`remote-${odId}`);
-  if (tile) {
-    tile.remove();
-  }
-}
+// ============================================
+// URL Parameter Handling
+// ============================================
 
-function handleScreenStream(odId, stream) {
-  screenVideo.srcObject = stream;
-  screenPlaceholder.classList.add('hidden');
+async function checkUrlParams() {
+  const params = new URLSearchParams(window.location.search);
+  const roomCode = params.get('room');
+  const email = params.get('email');
+  
+  if (roomCode && email) {
+    console.log('URL params found:', roomCode, email);
+    
+    // Clean URL
+    window.history.replaceState({}, document.title, window.location.pathname);
+    
+    try {
+      // Verify access
+      const access = await api.verifyAccess(roomCode, email);
+      
+      if (access.hasAccess) {
+        const name = localStorage.getItem('wp_name') || email.split('@')[0];
+        await enterRoom(roomCode, email, name, access.isHost);
+        return true;
+      } else {
+        showToast('Access denied. Please request a new invite.', 'error');
+      }
+    } catch (err) {
+      console.error('Access verification failed:', err);
+      showToast('Could not verify access. Please try again.', 'error');
+    }
+  }
+  
+  return false;
 }
 
 // ============================================
@@ -598,88 +629,20 @@ function handleScreenStream(odId, stream) {
 // ============================================
 
 async function init() {
-  console.log('Initializing Watch Party...');
+  console.log('Watch Party v2 initializing...');
   
-  // Initialize Firebase
-  const app = initializeApp(firebaseConfig);
-  console.log('Firebase initialized');
+  // Check URL params for direct room entry
+  const directEntry = await checkUrlParams();
   
-  // Initialize modules
-  initAuth(app);
-  initRoom(app);
-  initChat(app);
-  initWebRTC(app);
-  console.log('All modules initialized');
-  
-  // IMPORTANT: Wait for auth to be ready before checking pending auth
-  console.log('Waiting for auth to be ready...');
-  await waitForAuthReady();
-  console.log('Auth is ready, checking for pending auth...');
-  
-  // Check for email link redirect
-  if (hasPendingAuth()) {
-    console.log('Pending auth detected, handling redirect...');
-    try {
-      const result = await handleEmailLinkRedirect();
-      console.log('Email link result:', result);
-      
-      if (result && result.user) {
-        if (result.roomCode) {
-          // Join existing room
-          console.log('Joining room from email link:', result.roomCode);
-          await enterRoom(result.roomCode, result.isHost);
-        } else if (result.isHost) {
-          // Create new room
-          console.log('Creating new room from email link');
-          await enterRoom(null, true);
-        } else {
-          // Edge case: authenticated but no room context
-          console.log('Authenticated but no room context, showing landing');
-          showToast('Signed in! Create or join a room.', 'success');
-          showView('landing');
-        }
-        return;
-      }
-    } catch (err) {
-      console.error('Email link error:', err);
-      showToast(err.message || 'Authentication failed', 'error');
-    }
+  if (!directEntry) {
+    showView('landing');
   }
-  
-  // Check URL for room code (direct link)
-  const urlParams = new URLSearchParams(window.location.search);
-  const urlRoom = urlParams.get('room');
-  
-  if (urlRoom) {
-    console.log('Room code in URL:', urlRoom);
-    // Clean URL
-    window.history.replaceState({}, document.title, window.location.pathname);
-    
-    // Check if already logged in
-    const user = getUser();
-    if (user) {
-      await enterRoom(urlRoom, false);
-    } else {
-      // Need to auth first
-      pendingAction = 'join';
-      pendingRoomCode = urlRoom;
-      authTitle.textContent = 'Enter your email';
-      authSubtitle.textContent = `We'll send you a link to join room ${urlRoom}`;
-      showView('auth');
-    }
-    return;
-  }
-  
-  // Default: show landing
-  console.log('Showing landing page');
-  showView('landing');
 }
 
 // Handle page unload
 window.addEventListener('beforeunload', () => {
-  const room = getCurrentRoom();
-  if (room) {
-    leaveMesh();
+  if (currentRoom) {
+    webrtc.disconnect();
   }
 });
 

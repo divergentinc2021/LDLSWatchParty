@@ -1,231 +1,238 @@
 // ============================================
-// WebRTC Module
-// Handles P2P connections via simple-peer
-// Uses Firebase Realtime Database for signaling
+// WebRTC Module - PeerJS + Media Handling
 // ============================================
 
-import { 
-  getDatabase, 
-  ref, 
-  set, 
-  push, 
-  onChildAdded,
-  onChildRemoved,
-  remove,
-  onDisconnect
-} from 'firebase/database';
-import SimplePeer from 'simple-peer';
-import { iceServers } from './firebase-config.js';
+import { Peer } from 'peerjs';
+import { PEER_CONFIG } from './config.js';
 
-let rtdb;
+// State
+let peer = null;
 let localStream = null;
 let screenStream = null;
-let peers = new Map(); // odId -> { peer, stream }
-let roomCode = null;
-let localUserId = null;
-let isHost = false;
+let connections = new Map(); // peerId -> { conn, call, stream }
+let dataChannels = new Map(); // peerId -> dataConnection
 
 // Callbacks
-let onRemoteStream = null;
-let onRemoteDisconnect = null;
-let onScreenStream = null;
-
-export function initWebRTC(firebaseApp) {
-  rtdb = getDatabase(firebaseApp);
-}
-
-export function setCallbacks({ onStream, onDisconnect, onScreen }) {
-  onRemoteStream = onStream;
-  onRemoteDisconnect = onDisconnect;
-  onScreenStream = onScreen;
-}
+let callbacks = {
+  onPeerOpen: null,
+  onPeerError: null,
+  onConnection: null,
+  onDisconnection: null,
+  onRemoteStream: null,
+  onScreenStream: null,
+  onChatMessage: null
+};
 
 /**
- * Join the WebRTC mesh for a room
+ * Initialize PeerJS with room-specific ID
  */
-export async function joinMesh(code, odId, host = false) {
-  roomCode = code;
-  localUserId = odId;
-  isHost = host;
-  
-  // Reference to this room's signaling data
-  const roomRef = ref(rtdb, `rooms/${roomCode}`);
-  const userRef = ref(rtdb, `rooms/${roomCode}/users/${localUserId}`);
-  
-  // Announce our presence
-  await set(userRef, {
-    odId: localUserId,
-    joinedAt: Date.now(),
-    isHost: host
-  });
-  
-  // Clean up on disconnect
-  onDisconnect(userRef).remove();
-  
-  // Listen for other users joining
-  const usersRef = ref(rtdb, `rooms/${roomCode}/users`);
-  
-  onChildAdded(usersRef, (snapshot) => {
-    const userData = snapshot.val();
-    const odId = snapshot.key;
+export function initPeer(roomCode, odId) {
+  return new Promise((resolve, reject) => {
+    // Create a unique peer ID based on room and user
+    const peerId = `${roomCode}-${odId}`;
     
-    // Don't connect to ourselves
-    if (odId === localUserId) return;
+    peer = new Peer(peerId, PEER_CONFIG);
     
-    // Don't duplicate connections
-    if (peers.has(odId)) return;
+    peer.on('open', (id) => {
+      console.log('Peer connected with ID:', id);
+      if (callbacks.onPeerOpen) callbacks.onPeerOpen(id);
+      resolve(id);
+    });
     
-    console.log('User joined:', odId);
+    peer.on('error', (err) => {
+      console.error('Peer error:', err);
+      if (callbacks.onPeerError) callbacks.onPeerError(err);
+      reject(err);
+    });
     
-    // Initiator is the user with "higher" ID (consistent ordering)
-    const shouldInitiate = localUserId > odId;
-    createPeer(odId, shouldInitiate);
-  });
-  
-  // Listen for users leaving
-  onChildRemoved(usersRef, (snapshot) => {
-    const odId = snapshot.key;
-    console.log('User left:', odId);
-    removePeer(odId);
-  });
-  
-  // Listen for signaling messages to us
-  const signalRef = ref(rtdb, `rooms/${roomCode}/signals/${localUserId}`);
-  
-  onChildAdded(signalRef, async (snapshot) => {
-    const data = snapshot.val();
-    const fromId = data.from;
-    const signal = data.signal;
+    // Handle incoming calls
+    peer.on('call', (call) => {
+      console.log('Incoming call from:', call.peer);
+      handleIncomingCall(call);
+    });
     
-    console.log('Received signal from:', fromId);
-    
-    // Get or create peer
-    let peerData = peers.get(fromId);
-    
-    if (!peerData) {
-      // They initiated, we respond
-      createPeer(fromId, false);
-      peerData = peers.get(fromId);
-    }
-    
-    // Pass signal to peer
-    if (peerData && peerData.peer) {
-      peerData.peer.signal(signal);
-    }
-    
-    // Clean up processed signal
-    await remove(snapshot.ref);
-  });
-}
-
-/**
- * Create a peer connection
- */
-function createPeer(remoteId, initiator) {
-  console.log(`Creating peer for ${remoteId}, initiator: ${initiator}`);
-  
-  const peer = new SimplePeer({
-    initiator,
-    trickle: true,
-    config: { iceServers },
-    stream: localStream || undefined
-  });
-  
-  // Store peer
-  peers.set(remoteId, { peer, stream: null });
-  
-  // Handle signaling data
-  peer.on('signal', async (signal) => {
-    // Send signal to remote peer via Firebase
-    const signalRef = ref(rtdb, `rooms/${roomCode}/signals/${remoteId}`);
-    await push(signalRef, {
-      from: localUserId,
-      signal,
-      timestamp: Date.now()
+    // Handle incoming data connections (for chat)
+    peer.on('connection', (conn) => {
+      console.log('Incoming data connection from:', conn.peer);
+      setupDataConnection(conn);
     });
   });
-  
-  // Handle incoming stream
-  peer.on('stream', (stream) => {
-    console.log('Received stream from:', remoteId);
-    
-    const peerData = peers.get(remoteId);
-    if (peerData) {
-      peerData.stream = stream;
-    }
-    
-    // Check if this is a screen share stream (has video but no audio typically)
-    // or a webcam stream
-    const videoTracks = stream.getVideoTracks();
-    const audioTracks = stream.getAudioTracks();
-    
-    // Screen shares typically have displaySurface property
-    const isScreen = videoTracks.some(t => 
-      t.getSettings().displaySurface !== undefined
-    );
-    
-    if (isScreen && onScreenStream) {
-      onScreenStream(remoteId, stream);
-    } else if (onRemoteStream) {
-      onRemoteStream(remoteId, stream);
-    }
-  });
-  
-  // Handle connection established
-  peer.on('connect', () => {
-    console.log('Connected to:', remoteId);
-  });
-  
-  // Handle errors
-  peer.on('error', (err) => {
-    console.error('Peer error:', remoteId, err);
-    removePeer(remoteId);
-  });
-  
-  // Handle close
-  peer.on('close', () => {
-    console.log('Peer closed:', remoteId);
-    removePeer(remoteId);
-  });
-  
-  return peer;
 }
 
 /**
- * Remove a peer connection
+ * Set event callbacks
  */
-function removePeer(odId) {
-  const peerData = peers.get(odId);
-  if (peerData) {
-    if (peerData.peer) {
-      peerData.peer.destroy();
-    }
-    peers.delete(odId);
-    
-    if (onRemoteDisconnect) {
-      onRemoteDisconnect(odId);
-    }
+export function setCallbacks(cbs) {
+  callbacks = { ...callbacks, ...cbs };
+}
+
+/**
+ * Connect to a peer
+ */
+export function connectToPeer(remotePeerId) {
+  if (!peer || peer.disconnected) {
+    console.error('Peer not initialized');
+    return;
+  }
+  
+  // Don't connect to ourselves
+  if (remotePeerId === peer.id) return;
+  
+  // Already connected?
+  if (connections.has(remotePeerId)) return;
+  
+  console.log('Connecting to peer:', remotePeerId);
+  
+  // Create data connection for chat
+  const dataConn = peer.connect(remotePeerId, { reliable: true });
+  setupDataConnection(dataConn);
+  
+  // If we have local media, call the peer
+  if (localStream) {
+    callPeer(remotePeerId, localStream);
+  }
+  
+  // If we're sharing screen, call with screen too
+  if (screenStream) {
+    callPeer(remotePeerId, screenStream, 'screen');
   }
 }
 
 /**
- * Get or create local media stream
+ * Call a peer with media stream
+ */
+function callPeer(remotePeerId, stream, streamType = 'camera') {
+  console.log(`Calling ${remotePeerId} with ${streamType}`);
+  
+  const call = peer.call(remotePeerId, stream, {
+    metadata: { type: streamType }
+  });
+  
+  call.on('stream', (remoteStream) => {
+    handleRemoteStream(remotePeerId, remoteStream, call.metadata?.type);
+  });
+  
+  call.on('close', () => {
+    console.log('Call closed:', remotePeerId);
+  });
+  
+  call.on('error', (err) => {
+    console.error('Call error:', err);
+  });
+  
+  // Store connection
+  if (!connections.has(remotePeerId)) {
+    connections.set(remotePeerId, { calls: [], streams: [] });
+  }
+  connections.get(remotePeerId).calls.push(call);
+}
+
+/**
+ * Handle incoming call
+ */
+function handleIncomingCall(call) {
+  // Answer with local stream if available
+  call.answer(localStream || undefined);
+  
+  call.on('stream', (remoteStream) => {
+    const streamType = call.metadata?.type || 'camera';
+    handleRemoteStream(call.peer, remoteStream, streamType);
+  });
+  
+  call.on('close', () => {
+    console.log('Incoming call closed:', call.peer);
+  });
+  
+  // Store connection
+  if (!connections.has(call.peer)) {
+    connections.set(call.peer, { calls: [], streams: [] });
+  }
+  connections.get(call.peer).calls.push(call);
+}
+
+/**
+ * Handle remote stream
+ */
+function handleRemoteStream(peerId, stream, type) {
+  console.log(`Received ${type} stream from:`, peerId);
+  
+  // Store stream
+  if (!connections.has(peerId)) {
+    connections.set(peerId, { calls: [], streams: [] });
+  }
+  connections.get(peerId).streams.push({ stream, type });
+  
+  // Notify callback
+  if (type === 'screen' && callbacks.onScreenStream) {
+    callbacks.onScreenStream(peerId, stream);
+  } else if (callbacks.onRemoteStream) {
+    callbacks.onRemoteStream(peerId, stream);
+  }
+}
+
+/**
+ * Setup data connection for chat
+ */
+function setupDataConnection(conn) {
+  conn.on('open', () => {
+    console.log('Data connection open:', conn.peer);
+    dataChannels.set(conn.peer, conn);
+    
+    if (callbacks.onConnection) {
+      callbacks.onConnection(conn.peer);
+    }
+  });
+  
+  conn.on('data', (data) => {
+    if (data.type === 'chat' && callbacks.onChatMessage) {
+      callbacks.onChatMessage(conn.peer, data);
+    }
+  });
+  
+  conn.on('close', () => {
+    console.log('Data connection closed:', conn.peer);
+    dataChannels.delete(conn.peer);
+    
+    if (callbacks.onDisconnection) {
+      callbacks.onDisconnection(conn.peer);
+    }
+  });
+  
+  conn.on('error', (err) => {
+    console.error('Data connection error:', err);
+  });
+}
+
+/**
+ * Send chat message to all peers
+ */
+export function sendChatMessage(displayName, text) {
+  const message = {
+    type: 'chat',
+    displayName,
+    text,
+    timestamp: Date.now()
+  };
+  
+  dataChannels.forEach((conn) => {
+    if (conn.open) {
+      conn.send(message);
+    }
+  });
+  
+  return message;
+}
+
+/**
+ * Get local media stream
  */
 export async function getLocalStream(audio = true, video = true) {
-  if (localStream) {
-    // Update existing stream
-    if (audio) {
-      const audioTrack = localStream.getAudioTracks()[0];
-      if (audioTrack) audioTrack.enabled = true;
-    }
-    if (video) {
-      const videoTrack = localStream.getVideoTracks()[0];
-      if (videoTrack) videoTrack.enabled = true;
-    }
-    return localStream;
-  }
-  
   try {
+    // Stop existing stream
+    if (localStream) {
+      localStream.getTracks().forEach(t => t.stop());
+    }
+    
     localStream = await navigator.mediaDevices.getUserMedia({
       audio: audio ? {
         echoCancellation: true,
@@ -239,13 +246,9 @@ export async function getLocalStream(audio = true, video = true) {
       } : false
     });
     
-    // Add stream to existing peers
-    peers.forEach((peerData, odId) => {
-      if (peerData.peer && !peerData.peer.destroyed) {
-        localStream.getTracks().forEach(track => {
-          peerData.peer.addTrack(track, localStream);
-        });
-      }
+    // Send to existing connections
+    connections.forEach((data, peerId) => {
+      callPeer(peerId, localStream, 'camera');
     });
     
     return localStream;
@@ -280,7 +283,7 @@ export function toggleCamera(enabled) {
 }
 
 /**
- * Start screen sharing (host only)
+ * Start screen sharing
  */
 export async function startScreenShare() {
   try {
@@ -289,21 +292,15 @@ export async function startScreenShare() {
         cursor: 'always',
         displaySurface: 'monitor'
       },
-      // Disable system audio capture - it picks up notification sounds ("death sound")
-      // Users can still share tab audio by checking "Share tab audio" in browser dialog
-      audio: false
+      audio: false // No system audio
     });
     
-    // Send screen stream to all peers
-    peers.forEach((peerData, odId) => {
-      if (peerData.peer && !peerData.peer.destroyed) {
-        screenStream.getTracks().forEach(track => {
-          peerData.peer.addTrack(track, screenStream);
-        });
-      }
+    // Send to all peers
+    connections.forEach((data, peerId) => {
+      callPeer(peerId, screenStream, 'screen');
     });
     
-    // Handle user stopping share via browser UI
+    // Handle user stopping via browser UI
     screenStream.getVideoTracks()[0].onended = () => {
       stopScreenShare();
     };
@@ -326,55 +323,58 @@ export function stopScreenShare() {
 }
 
 /**
- * Get screen stream (for local display)
+ * Get current streams
  */
-export function getScreenStream() {
+export function getLocalMediaStream() {
+  return localStream;
+}
+
+export function getScreenMediaStream() {
   return screenStream;
 }
 
 /**
- * Leave the mesh
+ * Get connected peer IDs
  */
-export async function leaveMesh() {
-  // Stop all tracks
+export function getConnectedPeers() {
+  return Array.from(connections.keys());
+}
+
+/**
+ * Disconnect from all peers and cleanup
+ */
+export function disconnect() {
+  // Close all data channels
+  dataChannels.forEach(conn => conn.close());
+  dataChannels.clear();
+  
+  // Close all calls
+  connections.forEach(data => {
+    data.calls.forEach(call => call.close());
+  });
+  connections.clear();
+  
+  // Stop local streams
   if (localStream) {
-    localStream.getTracks().forEach(track => track.stop());
+    localStream.getTracks().forEach(t => t.stop());
     localStream = null;
   }
   
   if (screenStream) {
-    screenStream.getTracks().forEach(track => track.stop());
+    screenStream.getTracks().forEach(t => t.stop());
     screenStream = null;
   }
   
-  // Destroy all peers
-  peers.forEach((peerData, odId) => {
-    if (peerData.peer) {
-      peerData.peer.destroy();
-    }
-  });
-  peers.clear();
-  
-  // Remove from Firebase
-  if (roomCode && localUserId) {
-    const userRef = ref(rtdb, `rooms/${roomCode}/users/${localUserId}`);
-    await remove(userRef);
+  // Destroy peer
+  if (peer) {
+    peer.destroy();
+    peer = null;
   }
-  
-  roomCode = null;
-  localUserId = null;
 }
 
 /**
- * Get all connected peer IDs
+ * Get peer ID
  */
-export function getConnectedPeers() {
-  return Array.from(peers.keys());
-}
-
-/**
- * Get local stream
- */
-export function getLocalMediaStream() {
-  return localStream;
+export function getPeerId() {
+  return peer?.id;
 }

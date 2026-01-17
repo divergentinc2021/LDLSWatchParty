@@ -1,7 +1,7 @@
 {
-  "name": "watch-party",
-  "version": "1.0.0",
-  "description": "Zero-cost watch party with screen sharing, webcam, and chat",
+  "name": "watch-party-v2",
+  "version": "2.0.0",
+  "description": "Watch Party - Apps Script + PeerJS Edition",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,8 +9,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "firebase": "^10.7.0",
-    "simple-peer": "^9.11.1"
+    "peerjs": "^1.5.2",
+    "lucide": "^0.263.1"
   },
   "devDependencies": {
     "vite": "^5.0.0"
