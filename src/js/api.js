@@ -2,10 +2,8 @@
 // API - Apps Script Backend Communication
 // ============================================
 
-// IMPORTANT: Replace YOUR_DEPLOYMENT_ID with your actual Apps Script deployment ID
-// Deploy the Apps Script as a Web App with "Anyone" access
-// Example: https://script.google.com/macros/s/AKfycbw.../exec
-const API_URL = 'https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec';
+// Apps Script Web App URL
+const API_URL = 'https://script.google.com/macros/s/AKfycbzGSfmG-uWUd-9WYc99JcBDcekFb4A8D4lv1JqKRUIHx3fI06dt4xd3R5oHR9Nm-gzfTA/exec';
 
 // Check if API is configured
 function checkApiConfig() {
