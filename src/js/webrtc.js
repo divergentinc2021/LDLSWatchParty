@@ -1,13 +1,23 @@
 // ============================================
 // WebRTC Module - PeerJS + Peer Discovery
+// Lazy-loaded for better performance
 // ============================================
 
-import { Peer } from 'peerjs';
 import * as api from './api.js';
+
+// Lazy load PeerJS for better initial load performance
+let PeerClass = null;
+async function loadPeerJS() {
+  if (!PeerClass) {
+    const module = await import('peerjs');
+    PeerClass = module.Peer;
+  }
+  return PeerClass;
+}
 
 // PeerJS Configuration
 const PEER_CONFIG = {
-  debug: 2, // More verbose for debugging
+  debug: 1, // Reduced from 2 for production
   config: {
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
@@ -17,15 +27,15 @@ const PEER_CONFIG = {
   }
 };
 
-const HEARTBEAT_INTERVAL = 25000; // 25 seconds
-const PEER_DISCOVERY_INTERVAL = 10000; // Check for new peers every 10 seconds
+const HEARTBEAT_INTERVAL = 25000;
+const PEER_DISCOVERY_INTERVAL = 10000;
 
 // State
 let peer = null;
 let roomCode = null;
 let localStream = null;
 let screenStream = null;
-let connections = new Map(); // peerId -> { dataConn, mediaConns, streams }
+let connections = new Map();
 let myPeerData = null;
 let heartbeatTimer = null;
 let discoveryTimer = null;
@@ -54,6 +64,9 @@ export function setCallbacks(cbs) {
  * Initialize PeerJS and join room
  */
 export async function initPeer(code, odId, peerData) {
+  // Lazy load PeerJS when first needed (saves ~500KB on initial load)
+  const Peer = await loadPeerJS();
+  
   return new Promise(async (resolve, reject) => {
     roomCode = code.toUpperCase();
     const peerId = `${roomCode}-${odId}`;
@@ -66,16 +79,9 @@ export async function initPeer(code, odId, peerData) {
     peer.on('open', async (id) => {
       console.log('✅ Peer connected with ID:', id);
       
-      // Register ourselves as active in this room
       await api.registerPeer(roomCode, id, peerData.name, peerData.isHost);
-      
-      // Start heartbeat to stay registered
       startHeartbeat();
-      
-      // Discover and connect to existing peers
       await discoverAndConnectPeers();
-      
-      // Start periodic peer discovery (for late joiners)
       startPeerDiscovery();
       
       if (callbacks.onPeerOpen) callbacks.onPeerOpen(id);
@@ -85,8 +91,6 @@ export async function initPeer(code, odId, peerData) {
     peer.on('error', (err) => {
       console.error('❌ Peer error:', err);
       if (callbacks.onPeerError) callbacks.onPeerError(err);
-      
-      // Only reject if we haven't connected yet
       if (!peer?.open) reject(err);
     });
     
@@ -116,10 +120,7 @@ async function discoverAndConnectPeers() {
   console.log('Found peers:', result.peers);
   
   for (const peerInfo of result.peers) {
-    // Don't connect to ourselves
     if (peerInfo.peerId === peer.id) continue;
-    
-    // Don't reconnect to already connected peers
     if (connectedPeerIds.has(peerInfo.peerId)) continue;
     
     console.log('📞 Connecting to peer:', peerInfo.peerId, peerInfo.name);
@@ -143,7 +144,6 @@ function connectToPeer(remotePeerId, peerInfo = {}) {
   
   console.log('🔗 Initiating connection to:', remotePeerId);
   
-  // Create data connection with our metadata
   const dataConn = peer.connect(remotePeerId, {
     reliable: true,
     metadata: myPeerData
@@ -163,23 +163,19 @@ function setupDataConnection(conn, peerInfo = {}) {
     
     connectedPeerIds.add(remotePeerId);
     
-    // Store connection
     if (!connections.has(remotePeerId)) {
       connections.set(remotePeerId, { dataConn: conn, calls: [], peerInfo: peerInfo });
     } else {
       connections.get(remotePeerId).dataConn = conn;
     }
     
-    // Send our peer info
     conn.send({ type: 'peerInfo', data: myPeerData });
     
-    // Notify app of new connection
     const metadata = conn.metadata || peerInfo;
     if (callbacks.onConnection) {
       callbacks.onConnection(remotePeerId, metadata);
     }
     
-    // Send any active streams to this peer
     if (localStream) {
       console.log('📹 Sending camera stream to:', remotePeerId);
       callPeer(remotePeerId, localStream, 'camera');
@@ -216,7 +212,6 @@ function handleIncomingDataConnection(conn) {
 function handleDataMessage(peerId, message) {
   switch (message.type) {
     case 'peerInfo':
-      // Update peer info
       if (connections.has(peerId)) {
         connections.get(peerId).peerInfo = message.data;
       }
@@ -263,7 +258,6 @@ function callPeer(remotePeerId, stream, type = 'camera') {
     console.error('Call error:', err);
   });
   
-  // Store the call
   if (!connections.has(remotePeerId)) {
     connections.set(remotePeerId, { calls: [call], peerInfo: {} });
   } else {
@@ -277,7 +271,6 @@ function callPeer(remotePeerId, stream, type = 'camera') {
 function handleIncomingCall(call) {
   console.log('📥 Incoming call from:', call.peer, 'type:', call.metadata?.type);
   
-  // Answer with our stream (or undefined if we don't have one)
   call.answer(localStream || undefined);
   
   call.on('stream', (remoteStream) => {
@@ -289,7 +282,6 @@ function handleIncomingCall(call) {
     console.log('Incoming call closed from:', call.peer);
   });
   
-  // Store the call
   if (!connections.has(call.peer)) {
     connections.set(call.peer, { calls: [call], peerInfo: call.metadata || {} });
   } else {
@@ -413,7 +405,6 @@ export async function getLocalStream(audio = true, video = true) {
       video: video ? { width: { ideal: 320 }, height: { ideal: 240 }, frameRate: { ideal: 15 } } : false
     });
     
-    // Send to all connected peers
     connections.forEach((conn, peerId) => {
       if (conn.dataConn?.open) {
         callPeer(peerId, localStream, 'camera');
@@ -457,14 +448,12 @@ export async function startScreenShare() {
       audio: { echoCancellation: false, noiseSuppression: false }
     });
     
-    // Send to all connected peers
     connections.forEach((conn, peerId) => {
       if (conn.dataConn?.open) {
         callPeer(peerId, screenStream, 'screen');
       }
     });
     
-    // Handle user stopping via browser UI
     screenStream.getVideoTracks()[0].onended = () => {
       stopScreenShare();
     };
@@ -509,12 +498,10 @@ export async function disconnect() {
   stopHeartbeat();
   stopPeerDiscovery();
   
-  // Unregister from room
   if (roomCode && peer?.id) {
     await api.unregisterPeer(roomCode, peer.id);
   }
   
-  // Close all connections
   connections.forEach((conn, peerId) => {
     conn.calls?.forEach(call => call.close());
     conn.dataConn?.close();
@@ -522,7 +509,6 @@ export async function disconnect() {
   connections.clear();
   connectedPeerIds.clear();
   
-  // Stop streams
   if (localStream) {
     localStream.getTracks().forEach(t => t.stop());
     localStream = null;
@@ -532,7 +518,6 @@ export async function disconnect() {
     screenStream = null;
   }
   
-  // Destroy peer
   if (peer) {
     peer.destroy();
     peer = null;

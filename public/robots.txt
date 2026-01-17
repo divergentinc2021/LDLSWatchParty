@@ -1,0 +1,6 @@
+# Watch Party - robots.txt
+User-agent: *
+Allow: /
+
+# Sitemap
+Sitemap: https://ldlswatchparty.netlify.app/sitemap.xml
