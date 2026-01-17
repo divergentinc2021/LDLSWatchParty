@@ -1,14 +1,10 @@
 // ============================================
-// Watch Party - Main Application (v2 with Security)
+// Watch Party - Main Application
 // ============================================
 
+import * as api from './api.js';
 import * as webrtc from './webrtc.js';
-
-// ============================================
-// Configuration
-// ============================================
-
-const APP_URL = window.location.origin;
+import { APP_URL } from './config.js';
 
 // ============================================
 // State
@@ -16,12 +12,11 @@ const APP_URL = window.location.origin;
 
 let currentRoom = null;
 let currentToken = null;
-let currentPassword = null;
 let currentUser = null;
 let isHost = false;
 let canShareScreen = false;
-let participants = new Map(); // odId -> { name, isHost, canShare, peerId }
-let bannedUsers = new Set(); // odIds that have been kicked
+let participants = new Map();
+let bannedUsers = new Set();
 let chatMessages = [];
 
 // ============================================
@@ -30,6 +25,7 @@ let chatMessages = [];
 
 const views = {
   landing: document.getElementById('view-landing'),
+  pending: document.getElementById('view-pending'),
   room: document.getElementById('view-room'),
   kicked: document.getElementById('view-kicked')
 };
@@ -37,11 +33,18 @@ const views = {
 // Landing
 const createForm = document.getElementById('create-form');
 const createName = document.getElementById('create-name');
+const createEmail = document.getElementById('create-email');
 const createPassword = document.getElementById('create-password');
 const joinForm = document.getElementById('join-form');
 const inputCode = document.getElementById('input-code');
 const joinName = document.getElementById('join-name');
+const joinEmail = document.getElementById('join-email');
 const joinPassword = document.getElementById('join-password');
+
+// Pending
+const pendingEmail = document.getElementById('pending-email');
+const pendingCode = document.getElementById('pending-code');
+const btnBackLanding = document.getElementById('btn-back-landing');
 
 // Room
 const headerRoomCode = document.getElementById('header-room-code');
@@ -75,38 +78,8 @@ const toastContainer = document.getElementById('toast-container');
 // Utility Functions
 // ============================================
 
-function generateRoomCode() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let code = '';
-  for (let i = 0; i < 5; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return code;
-}
-
-function generateToken() {
-  const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
-  let token = '';
-  for (let i = 0; i < 10; i++) {
-    token += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return token;
-}
-
 function generateUserId() {
   return Math.random().toString(36).substring(2, 10);
-}
-
-// Hash password for comparison (simple hash, not for production security)
-function hashPassword(password) {
-  if (!password) return null;
-  let hash = 0;
-  for (let i = 0; i < password.length; i++) {
-    const char = password.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash;
-  }
-  return hash.toString(36);
 }
 
 function showView(viewName) {
@@ -114,10 +87,9 @@ function showView(viewName) {
     views[key].classList.toggle('active', key === viewName);
   });
   
-  // Update URL
   if (viewName === 'room' && currentRoom && currentToken) {
     window.history.pushState({ room: currentRoom }, '', `/${currentRoom}-${currentToken}`);
-  } else if (viewName === 'landing' || viewName === 'kicked') {
+  } else if (viewName === 'landing' || viewName === 'kicked' || viewName === 'pending') {
     window.history.pushState({}, '', '/');
   }
 }
@@ -127,8 +99,12 @@ function showToast(message, type = 'info') {
   toast.className = `toast ${type}`;
   toast.textContent = message;
   toastContainer.appendChild(toast);
-  
   setTimeout(() => toast.remove(), 3000);
+}
+
+function setButtonLoading(btn, loading) {
+  btn.classList.toggle('loading', loading);
+  btn.disabled = loading;
 }
 
 function escapeHtml(text) {
@@ -149,90 +125,119 @@ function getShareableUrl() {
 // Room Management
 // ============================================
 
-async function createRoom(userName, password) {
-  const roomCode = generateRoomCode();
-  const token = generateToken();
-  const odId = generateUserId();
-  const passwordHash = hashPassword(password);
+async function handleCreateRoom(e) {
+  e.preventDefault();
+  
+  const name = createName.value.trim();
+  const email = createEmail.value.trim();
+  const password = createPassword.value;
+  
+  if (!name || !email) {
+    showToast('Please enter your name and email', 'error');
+    return;
+  }
+  
+  const btn = createForm.querySelector('button');
+  setButtonLoading(btn, true);
+  
+  try {
+    const result = await api.createRoom(email, name, password);
+    
+    if (result.success) {
+      // Show pending view
+      pendingEmail.textContent = email;
+      pendingCode.textContent = result.code;
+      showView('pending');
+      showToast('Check your email for the room link!', 'success');
+    } else {
+      showToast(result.error || 'Failed to create room', 'error');
+    }
+  } catch (err) {
+    console.error('Create room error:', err);
+    showToast('Failed to create room. Please try again.', 'error');
+  } finally {
+    setButtonLoading(btn, false);
+  }
+}
+
+async function handleJoinRoom(e) {
+  e.preventDefault();
+  
+  const code = inputCode.value.trim().toUpperCase();
+  const name = joinName.value.trim();
+  const email = joinEmail.value.trim();
+  const password = joinPassword.value;
+  
+  if (!code || code.length !== 5) {
+    showToast('Please enter a valid 5-character room code', 'error');
+    return;
+  }
+  
+  if (!name || !email) {
+    showToast('Please enter your name and email', 'error');
+    return;
+  }
+  
+  const btn = joinForm.querySelector('button');
+  setButtonLoading(btn, true);
+  
+  try {
+    // First validate the room exists
+    const validation = await api.validateRoom(code);
+    
+    if (!validation.valid) {
+      showToast(validation.error || 'Room not found', 'error');
+      setButtonLoading(btn, false);
+      return;
+    }
+    
+    // Join the room
+    const result = await api.joinRoom(code, email, name, password);
+    
+    if (result.success) {
+      pendingEmail.textContent = email;
+      pendingCode.textContent = result.code;
+      showView('pending');
+      showToast('Check your email for the access link!', 'success');
+    } else {
+      showToast(result.error || 'Failed to join room', 'error');
+    }
+  } catch (err) {
+    console.error('Join room error:', err);
+    showToast('Failed to join room. Please try again.', 'error');
+  } finally {
+    setButtonLoading(btn, false);
+  }
+}
+
+async function enterRoom(roomCode, token, userName, email, hostStatus) {
+  console.log('Entering room:', roomCode, 'as', userName, 'host:', hostStatus);
   
   currentRoom = roomCode;
   currentToken = token;
-  currentPassword = passwordHash;
-  currentUser = { id: odId, name: userName };
-  isHost = true;
-  canShareScreen = true;
-  
-  // Store session
-  sessionStorage.setItem('wp_session', JSON.stringify({
-    odId,
-    room: roomCode,
-    token: token,
-    passwordHash: passwordHash,
-    name: userName,
-    isHost: true
-  }));
-  
-  await enterRoom(roomCode, token, odId, userName, true, passwordHash);
-}
-
-async function joinRoom(roomCode, userName, password) {
-  const normalizedCode = roomCode.toUpperCase().trim();
-  const odId = generateUserId();
-  const passwordHash = hashPassword(password);
-  
-  currentRoom = normalizedCode;
-  currentUser = { id: odId, name: userName };
-  isHost = false;
-  canShareScreen = false;
-  
-  // Token will be received from host via WebRTC
-  // For now, we need to connect and validate
-  
-  // Store partial session (token comes from URL or host)
-  sessionStorage.setItem('wp_session', JSON.stringify({
-    odId,
-    room: normalizedCode,
-    token: currentToken, // May be null if joining via code
-    passwordHash: passwordHash,
-    name: userName,
-    isHost: false
-  }));
-  
-  await enterRoom(normalizedCode, currentToken, odId, userName, false, passwordHash);
-}
-
-async function enterRoom(roomCode, token, odId, userName, hostStatus, passwordHash) {
-  console.log('Entering room:', roomCode, 'as', userName, 'host:', hostStatus);
-  
+  currentUser = { id: generateUserId(), name: userName, email: email };
   isHost = hostStatus;
   canShareScreen = hostStatus;
-  currentToken = token;
-  currentPassword = passwordHash;
   
   // Update UI
   headerRoomCode.textContent = roomCode;
+  shareUrl.textContent = getShareableUrl();
   hostBadge.classList.toggle('hidden', !isHost);
-  passwordBadge.classList.toggle('hidden', !passwordHash);
   btnScreen.disabled = !canShareScreen;
   
-  if (token) {
-    shareUrl.textContent = `${APP_URL}/${roomCode}-${token}`;
-  } else {
-    shareUrl.textContent = `Code: ${roomCode}`;
-  }
-  
-  if (isHost) {
-    screenPlaceholderText.textContent = 'Click "Screen" to share your screen';
-  } else {
-    screenPlaceholderText.textContent = 'Waiting for host to share screen';
-  }
+  screenPlaceholderText.textContent = isHost 
+    ? 'Click "Screen" to share your screen' 
+    : 'Waiting for host to share screen';
   
   // Add self to participants
-  participants.set(odId, { name: userName, isHost: hostStatus, canShare: hostStatus });
+  participants.set(currentUser.id, { 
+    name: userName, 
+    isHost: hostStatus, 
+    canShare: hostStatus 
+  });
   updateParticipantsList();
   
   try {
-    // Initialize WebRTC
     webrtc.setCallbacks({
       onPeerOpen: (id) => {
         console.log('Peer ready:', id);
@@ -243,7 +248,6 @@ async function enterRoom(roomCode, token, odId, userName, hostStatus, passwordHa
         showToast('Connection error. Please refresh.', 'error');
       },
       onConnection: (peerId, peerData) => {
-        console.log('Peer connected:', peerId, peerData);
         handlePeerConnection(peerId, peerData);
       },
       onDisconnection: (peerId) => {
@@ -271,13 +275,11 @@ async function enterRoom(roomCode, token, odId, userName, hostStatus, passwordHa
       }
     });
     
-    await webrtc.initPeer(roomCode, odId, {
+    await webrtc.initPeer(roomCode, currentUser.id, {
       name: userName,
-      odId: odId,
+      odId: currentUser.id,
       isHost: hostStatus,
-      canShare: canShareScreen,
-      passwordHash: passwordHash,
-      token: token
+      canShare: canShareScreen
     });
     
     showView('room');
@@ -285,7 +287,7 @@ async function enterRoom(roomCode, token, odId, userName, hostStatus, passwordHa
     
   } catch (err) {
     console.error('Failed to enter room:', err);
-    showToast('Failed to join room. Please try again.', 'error');
+    showToast('Failed to connect. Please try again.', 'error');
     showView('landing');
   }
 }
@@ -295,29 +297,13 @@ function handlePeerConnection(peerId, peerData) {
   
   const incomingOdId = peerData.odId || peerId;
   
-  // Host validates incoming connections
-  if (isHost) {
-    // Check if banned
-    if (bannedUsers.has(incomingOdId)) {
-      console.log('Rejecting banned user:', incomingOdId);
-      webrtc.sendControlMessage({ type: 'kicked', targetOdId: incomingOdId, reason: 'You have been banned from this room' });
-      return;
-    }
-    
-    // Check password if room has one
-    if (currentPassword && peerData.passwordHash !== currentPassword) {
-      console.log('Rejecting user with wrong password:', incomingOdId);
-      webrtc.sendControlMessage({ type: 'kicked', targetOdId: incomingOdId, reason: 'Incorrect password' });
-      return;
-    }
-    
-    // Send room info to new participant
-    webrtc.sendControlMessage({
-      type: 'roomInfo',
-      targetOdId: incomingOdId,
-      token: currentToken,
-      hasPassword: !!currentPassword
+  if (isHost && bannedUsers.has(incomingOdId)) {
+    webrtc.sendControlMessage({ 
+      type: 'kicked', 
+      targetOdId: incomingOdId, 
+      reason: 'You have been banned from this room' 
     });
+    return;
   }
   
   participants.set(incomingOdId, {
@@ -348,15 +334,12 @@ function leaveRoom() {
   
   currentRoom = null;
   currentToken = null;
-  currentPassword = null;
   currentUser = null;
   isHost = false;
   canShareScreen = false;
   participants.clear();
   bannedUsers.clear();
   chatMessages = [];
-  
-  sessionStorage.removeItem('wp_session');
   
   // Reset UI
   btnMic.dataset.active = 'false';
@@ -388,7 +371,6 @@ function updateParticipantsList() {
   participants.forEach((data, odId) => {
     const item = document.createElement('div');
     item.className = 'participant-item';
-    item.dataset.odId = odId;
     
     const isSelf = currentUser && currentUser.id === odId;
     
@@ -396,12 +378,10 @@ function updateParticipantsList() {
     if (isHost && !data.isHost && !isSelf) {
       actionsHtml = `
         <div class="participant-actions">
-          <button class="btn-grant-screen" data-od-id="${odId}" title="${data.canShare ? 'Revoke screen share' : 'Grant screen share'}">
+          <button class="btn-grant-screen" data-od-id="${odId}">
             ${data.canShare ? 'Revoke' : 'Screen'}
           </button>
-          <button class="btn-kick" data-od-id="${odId}" title="Remove from room">
-            Kick
-          </button>
+          <button class="btn-kick" data-od-id="${odId}">Kick</button>
         </div>
       `;
     }
@@ -417,32 +397,28 @@ function updateParticipantsList() {
     participantsList.appendChild(item);
   });
   
-  // Grant/Revoke screen share
+  // Grant/Revoke buttons
   participantsList.querySelectorAll('.btn-grant-screen').forEach(btn => {
     btn.addEventListener('click', () => {
       const targetOdId = btn.dataset.odId;
       const participant = participants.get(targetOdId);
       if (participant) {
-        const newCanShare = !participant.canShare;
-        participant.canShare = newCanShare;
+        participant.canShare = !participant.canShare;
         updateParticipantsList();
-        
         webrtc.sendControlMessage({
           type: 'screenPermission',
           targetOdId: targetOdId,
-          canShare: newCanShare
+          canShare: participant.canShare
         });
-        
-        showToast(`${newCanShare ? 'Granted' : 'Revoked'} screen share for ${participant.name}`, 'success');
+        showToast(`${participant.canShare ? 'Granted' : 'Revoked'} screen share for ${participant.name}`, 'success');
       }
     });
   });
   
-  // Kick button
+  // Kick buttons
   participantsList.querySelectorAll('.btn-kick').forEach(btn => {
     btn.addEventListener('click', () => {
-      const targetOdId = btn.dataset.odId;
-      kickParticipant(targetOdId);
+      kickParticipant(btn.dataset.odId);
     });
   });
 }
@@ -451,21 +427,17 @@ function kickParticipant(targetOdId) {
   const participant = participants.get(targetOdId);
   if (!participant || !isHost) return;
   
-  // Add to ban list
   bannedUsers.add(targetOdId);
   
-  // Send kick message
   webrtc.sendControlMessage({
     type: 'kicked',
     targetOdId: targetOdId,
     reason: 'You have been removed by the host'
   });
   
-  // Remove from local participants
   addSystemMessage(`${participant.name} was removed`);
   participants.delete(targetOdId);
   
-  // Close connection
   if (participant.peerId) {
     removeRemoteVideo(participant.peerId);
   }
@@ -475,8 +447,6 @@ function kickParticipant(targetOdId) {
 }
 
 function handleControlMessage(peerId, data) {
-  console.log('Control message:', data);
-  
   switch (data.type) {
     case 'screenPermission':
       if (data.targetOdId === currentUser?.id) {
@@ -490,22 +460,6 @@ function handleControlMessage(peerId, data) {
       if (data.targetOdId === currentUser?.id) {
         webrtc.disconnect();
         showView('kicked');
-      }
-      break;
-      
-    case 'roomInfo':
-      if (data.targetOdId === currentUser?.id) {
-        // Received room info from host
-        if (data.token && !currentToken) {
-          currentToken = data.token;
-          shareUrl.textContent = getShareableUrl();
-          
-          // Update session
-          const session = JSON.parse(sessionStorage.getItem('wp_session') || '{}');
-          session.token = data.token;
-          sessionStorage.setItem('wp_session', JSON.stringify(session));
-        }
-        passwordBadge.classList.toggle('hidden', !data.hasPassword);
       }
       break;
   }
@@ -587,42 +541,13 @@ function renderChatMessages() {
 // Event Listeners
 // ============================================
 
-// Create room
-createForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const name = createName.value.trim();
-  const password = createPassword.value;
-  
-  if (!name) return;
-  
-  createForm.querySelector('button').disabled = true;
-  await createRoom(name, password);
-  createForm.querySelector('button').disabled = false;
-});
+createForm.addEventListener('submit', handleCreateRoom);
+joinForm.addEventListener('submit', handleJoinRoom);
 
-// Join room
-joinForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const code = inputCode.value.trim();
-  const name = joinName.value.trim();
-  const password = joinPassword.value;
-  
-  if (!code || code.length !== 5 || !name) {
-    showToast('Please enter a valid 5-character code and your name', 'error');
-    return;
-  }
-  
-  joinForm.querySelector('button').disabled = true;
-  await joinRoom(code, name, password);
-  joinForm.querySelector('button').disabled = false;
-});
-
-// Auto-uppercase room code
 inputCode.addEventListener('input', (e) => {
   e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
 });
 
-// Chat
 chatForm.addEventListener('submit', (e) => {
   e.preventDefault();
   const text = chatInput.value.trim();
@@ -633,7 +558,6 @@ chatForm.addEventListener('submit', (e) => {
   addChatMessage(currentUser.name, text, message.timestamp);
 });
 
-// Media controls
 btnMic.addEventListener('click', async () => {
   const isActive = btnMic.dataset.active === 'true';
   
@@ -704,36 +628,23 @@ btnScreen.addEventListener('click', async () => {
   }
 });
 
-// Copy link
 btnCopyRoom.addEventListener('click', () => {
-  const url = currentToken ? getShareableUrl() : `Room Code: ${currentRoom}`;
-  navigator.clipboard.writeText(currentToken ? getShareableUrl() : currentRoom);
-  showToast('Copied!', 'success');
+  navigator.clipboard.writeText(getShareableUrl());
+  showToast('Link copied!', 'success');
 });
 
 btnCopyLink.addEventListener('click', () => {
-  if (currentToken) {
-    navigator.clipboard.writeText(getShareableUrl());
-    showToast('Link copied!', 'success');
-  } else {
-    navigator.clipboard.writeText(currentRoom);
-    showToast('Code copied!', 'success');
-  }
+  navigator.clipboard.writeText(getShareableUrl());
+  showToast('Link copied!', 'success');
 });
 
-// Leave room
 btnLeave.addEventListener('click', leaveRoom);
 
-// Back home from kicked
-btnBackHome.addEventListener('click', () => {
-  showView('landing');
-});
+btnBackLanding.addEventListener('click', () => showView('landing'));
+btnBackHome.addEventListener('click', () => showView('landing'));
 
-// Handle browser back/forward
 window.addEventListener('popstate', (e) => {
-  if (e.state?.room && !currentRoom) {
-    checkUrlAndSession();
-  } else if (!e.state?.room && currentRoom) {
+  if (!e.state?.room && currentRoom) {
     leaveRoom();
   }
 });
@@ -745,52 +656,43 @@ window.addEventListener('popstate', (e) => {
 async function checkUrlAndSession() {
   const path = window.location.pathname;
   
-  // Match /XXXXX-xxxxxxxxxx (code-token) or /XXXXX (code only)
+  // Match /XXXXX-xxxxxxxxxx (code-token)
   const fullMatch = path.match(/^\/([A-Z0-9]{5})-([a-z0-9]{10})$/i);
-  const codeMatch = path.match(/^\/([A-Z0-9]{5})$/i);
   
   if (fullMatch) {
-    // URL has both code and token
     const roomCode = fullMatch[1].toUpperCase();
     const token = fullMatch[2].toLowerCase();
     
-    currentToken = token;
-    
-    // Check for existing session
-    const sessionData = sessionStorage.getItem('wp_session');
-    if (sessionData) {
-      try {
-        const session = JSON.parse(sessionData);
-        if (session.room === roomCode && session.token === token) {
-          // Rejoin with existing session
-          await enterRoom(session.room, session.token, session.odId, session.name, session.isHost, session.passwordHash);
-          return true;
-        }
-      } catch (e) {
-        sessionStorage.removeItem('wp_session');
+    try {
+      // Verify access via API
+      const result = await api.verifyAccess(roomCode, token, '');
+      
+      if (result.success && result.hasAccess) {
+        // Auto-enter room
+        await enterRoom(roomCode, token, result.name, result.email, result.isHost);
+        return true;
+      } else {
+        showToast(result.error || 'Invalid or expired link', 'error');
+        inputCode.value = roomCode;
       }
+    } catch (err) {
+      console.error('Verify access error:', err);
+      showToast('Could not verify access', 'error');
+      inputCode.value = roomCode;
     }
-    
-    // New join via link - show join form with code pre-filled
-    inputCode.value = roomCode;
-    joinName.focus();
-    showView('landing');
-    return true;
-    
-  } else if (codeMatch) {
-    // URL has code only (someone typed it manually)
-    const roomCode = codeMatch[1].toUpperCase();
-    inputCode.value = roomCode;
-    joinName.focus();
-    showView('landing');
-    return true;
+  }
+  
+  // Match /XXXXX (code only)
+  const codeMatch = path.match(/^\/([A-Z0-9]{5})$/i);
+  if (codeMatch) {
+    inputCode.value = codeMatch[1].toUpperCase();
   }
   
   return false;
 }
 
 async function init() {
-  console.log('Watch Party v2 initializing...');
+  console.log('Watch Party initializing...');
   
   const hasRoom = await checkUrlAndSession();
   
@@ -799,15 +701,14 @@ async function init() {
   }
 }
 
-// Handle page unload
 window.addEventListener('beforeunload', () => {
   if (currentRoom) {
     webrtc.disconnect();
   }
 });
 
-// Start
 init().catch(err => {
   console.error('Init error:', err);
   showToast('Failed to initialize', 'error');
+  showView('landing');
 });

@@ -49,6 +49,14 @@
                   autocomplete="name"
                 >
                 <input 
+                  type="email" 
+                  id="create-email" 
+                  class="input"
+                  placeholder="Your email"
+                  required
+                  autocomplete="email"
+                >
+                <input 
                   type="password" 
                   id="create-password" 
                   class="input"
@@ -56,7 +64,8 @@
                   autocomplete="new-password"
                 >
                 <button type="submit" class="btn btn-primary">
-                  Create Room
+                  <span class="btn-text">Create Room</span>
+                  <span class="btn-loading hidden">Creating...</span>
                 </button>
               </form>
             </div>
@@ -71,13 +80,14 @@
                 </svg>
               </div>
               <h2>Join Room</h2>
-              <p>Enter a room code to join</p>
+              <p>Enter room code to join</p>
               <form id="join-form" class="inline-form">
                 <input 
                   type="text" 
                   id="input-code" 
-                  class="input input-code-inline"
-                  placeholder="Room code"
+                  class="input-code"
+                  placeholder="XXXXX"
+                  maxlength="5"
                   autocomplete="off"
                   spellcheck="false"
                   required
@@ -90,17 +100,24 @@
                   required
                   autocomplete="name"
                 >
-                <div id="password-field" class="password-field hidden">
-                  <input 
-                    type="password" 
-                    id="join-password" 
-                    class="input"
-                    placeholder="Room password"
-                    autocomplete="current-password"
-                  >
-                </div>
+                <input 
+                  type="email" 
+                  id="join-email" 
+                  class="input"
+                  placeholder="Your email"
+                  required
+                  autocomplete="email"
+                >
+                <input 
+                  type="password" 
+                  id="join-password" 
+                  class="input"
+                  placeholder="Room password (if required)"
+                  autocomplete="current-password"
+                >
                 <button type="submit" class="btn btn-secondary">
-                  Join
+                  <span class="btn-text">Join Room</span>
+                  <span class="btn-loading hidden">Joining...</span>
                 </button>
               </form>
             </div>
@@ -111,6 +128,28 @@
         <footer class="landing-footer">
           <p>Powered by <a href="https://divergentbiz.com" target="_blank" rel="noopener noreferrer">Divergent Inc.</a></p>
         </footer>
+      </div>
+    </section>
+    
+    <!-- Pending View (waiting for email) -->
+    <section id="view-pending" class="view">
+      <div class="pending-container">
+        <div class="pending-card">
+          <div class="pending-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+              <polyline points="22,6 12,13 2,6"></polyline>
+            </svg>
+          </div>
+          <h2>Check Your Email</h2>
+          <p>We've sent a link to <strong id="pending-email">your email</strong></p>
+          <p class="pending-hint">Click the link in your email to enter the room</p>
+          <div class="pending-code">
+            <span>Room Code:</span>
+            <code id="pending-code">XXXXX</code>
+          </div>
+          <button id="btn-back-landing" class="btn btn-ghost">Back to Home</button>
+        </div>
       </div>
     </section>
     
@@ -128,12 +167,6 @@
               </svg>
               <span id="header-room-code">XXXXX</span>
             </span>
-            <span id="password-indicator" class="password-indicator hidden" title="Password protected">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-              </svg>
-            </span>
             <button id="btn-copy-room" class="btn-icon-sm" title="Copy room link">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
@@ -141,6 +174,12 @@
               </svg>
             </button>
             <span id="host-badge" class="host-badge hidden">HOST</span>
+            <span id="password-badge" class="password-badge hidden" title="Password protected">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+              </svg>
+            </span>
           </div>
           
           <div class="room-meta">
@@ -153,9 +192,7 @@
               </svg>
               <span>1</span>
             </span>
-            <button id="btn-leave" class="btn btn-ghost btn-sm">
-              Leave
-            </button>
+            <button id="btn-leave" class="btn btn-ghost btn-sm">Leave</button>
           </div>
         </header>
         
@@ -164,7 +201,6 @@
           
           <!-- Video Area -->
           <div class="video-area">
-            <!-- Screen Share -->
             <div class="screen-container">
               <video id="screen-video" autoplay playsinline></video>
               <div id="screen-placeholder" class="screen-placeholder">
@@ -177,7 +213,6 @@
               </div>
             </div>
             
-            <!-- Webcam Grid -->
             <div id="webcam-grid" class="webcam-grid">
               <div id="local-tile" class="webcam-tile local">
                 <video id="local-video" autoplay playsinline muted></video>
@@ -188,22 +223,18 @@
           
           <!-- Sidebar -->
           <aside class="sidebar">
-            <!-- Participants Panel -->
             <div class="participants-panel">
               <div class="panel-header">
                 <h3>Participants</h3>
               </div>
-              <div id="participants-list" class="participants-list">
-              </div>
+              <div id="participants-list" class="participants-list"></div>
             </div>
             
-            <!-- Chat Panel -->
             <div class="chat-panel">
               <div class="chat-header">
                 <h3>Chat</h3>
               </div>
-              <div id="chat-messages" class="chat-messages">
-              </div>
+              <div id="chat-messages" class="chat-messages"></div>
               <form id="chat-form" class="chat-form">
                 <input 
                   type="text" 
@@ -275,11 +306,9 @@
             </button>
           </div>
           
-          <!-- Share Link -->
           <div class="share-link-bar">
             <span>Invite friends:</span>
-            <code id="share-code">XXXXX</code>
-            <span class="separator">or</span>
+            <code id="share-url">ldlswatchparty.netlify.app/XXXXX</code>
             <button id="btn-copy-link" class="btn btn-sm btn-secondary">Copy Link</button>
           </div>
         </footer>
@@ -290,16 +319,18 @@
     <!-- Kicked View -->
     <section id="view-kicked" class="view">
       <div class="kicked-container">
-        <div class="kicked-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10"></circle>
-            <line x1="15" y1="9" x2="9" y2="15"></line>
-            <line x1="9" y1="9" x2="15" y2="15"></line>
-          </svg>
+        <div class="kicked-card">
+          <div class="kicked-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="15" y1="9" x2="9" y2="15"></line>
+              <line x1="9" y1="9" x2="15" y2="15"></line>
+            </svg>
+          </div>
+          <h2>Removed from Room</h2>
+          <p>You have been removed from this watch party by the host.</p>
+          <button id="btn-back-home" class="btn btn-primary">Back to Home</button>
         </div>
-        <h2>You've been removed</h2>
-        <p>The host has removed you from this room.</p>
-        <button id="btn-back-home" class="btn btn-primary">Back to Home</button>
       </div>
     </section>
     

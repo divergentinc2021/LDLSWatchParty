@@ -624,3 +624,67 @@ a:hover { color: var(--accent-hover); }
   .webcam-tile { width: 80px; height: 60px; }
   .share-link-bar { flex-wrap: wrap; }
 }
+
+/* Button Loading State */
+.btn .btn-loading { display: none; }
+.btn.loading .btn-text { display: none; }
+.btn.loading .btn-loading { display: inline; }
+
+/* Pending View */
+#view-pending.active { align-items: center; justify-content: center; }
+
+.pending-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-xl);
+}
+
+.pending-card {
+  text-align: center;
+  max-width: 420px;
+  padding: var(--space-2xl);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+}
+
+.pending-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 80px;
+  margin-bottom: var(--space-lg);
+  background: var(--accent-muted);
+  border-radius: 50%;
+}
+
+.pending-icon svg { width: 40px; height: 40px; color: var(--accent); }
+
+.pending-card h2 { margin-bottom: var(--space-sm); }
+.pending-card p { margin-bottom: var(--space-md); }
+.pending-card strong { color: var(--text-primary); }
+
+.pending-hint { font-size: 0.875rem; color: var(--text-muted); }
+
+.pending-code {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-md);
+  margin: var(--space-xl) 0;
+  padding: var(--space-md);
+  background: var(--bg-elevated);
+  border-radius: var(--radius-md);
+}
+
+.pending-code span { font-size: 0.875rem; color: var(--text-muted); }
+
+.pending-code code {
+  font-family: var(--font-mono);
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  color: var(--accent);
+}
