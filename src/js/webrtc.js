@@ -3,14 +3,25 @@
 // ============================================
 
 import { Peer } from 'peerjs';
-import { PEER_CONFIG } from './config.js';
+
+// PeerJS Configuration
+const PEER_CONFIG = {
+  debug: 1,
+  config: {
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' }
+    ]
+  }
+};
 
 // State
 let peer = null;
 let localStream = null;
 let screenStream = null;
-let connections = new Map(); // peerId -> { conn, call, stream }
-let dataChannels = new Map(); // peerId -> dataConnection
+let connections = new Map();
+let dataChannels = new Map();
+let myPeerData = null;
 
 // Callbacks
 let callbacks = {
@@ -20,21 +31,22 @@ let callbacks = {
   onDisconnection: null,
   onRemoteStream: null,
   onScreenStream: null,
-  onChatMessage: null
+  onChatMessage: null,
+  onControlMessage: null
 };
 
 /**
- * Initialize PeerJS with room-specific ID
+ * Initialize PeerJS
  */
-export function initPeer(roomCode, odId) {
+export function initPeer(roomCode, odId, peerData) {
   return new Promise((resolve, reject) => {
-    // Create a unique peer ID based on room and user
     const peerId = `${roomCode}-${odId}`;
+    myPeerData = { ...peerData, odId };
     
     peer = new Peer(peerId, PEER_CONFIG);
     
     peer.on('open', (id) => {
-      console.log('Peer connected with ID:', id);
+      console.log('Peer connected:', id);
       if (callbacks.onPeerOpen) callbacks.onPeerOpen(id);
       resolve(id);
     });
@@ -45,22 +57,13 @@ export function initPeer(roomCode, odId) {
       reject(err);
     });
     
-    // Handle incoming calls
-    peer.on('call', (call) => {
-      console.log('Incoming call from:', call.peer);
-      handleIncomingCall(call);
-    });
-    
-    // Handle incoming data connections (for chat)
-    peer.on('connection', (conn) => {
-      console.log('Incoming data connection from:', conn.peer);
-      setupDataConnection(conn);
-    });
+    peer.on('call', handleIncomingCall);
+    peer.on('connection', handleIncomingConnection);
   });
 }
 
 /**
- * Set event callbacks
+ * Set callbacks
  */
 export function setCallbacks(cbs) {
   callbacks = { ...callbacks, ...cbs };
@@ -70,57 +73,41 @@ export function setCallbacks(cbs) {
  * Connect to a peer
  */
 export function connectToPeer(remotePeerId) {
-  if (!peer || peer.disconnected) {
-    console.error('Peer not initialized');
-    return;
-  }
-  
-  // Don't connect to ourselves
+  if (!peer || peer.disconnected) return;
   if (remotePeerId === peer.id) return;
+  if (dataChannels.has(remotePeerId)) return;
   
-  // Already connected?
-  if (connections.has(remotePeerId)) return;
+  console.log('Connecting to:', remotePeerId);
   
-  console.log('Connecting to peer:', remotePeerId);
-  
-  // Create data connection for chat
-  const dataConn = peer.connect(remotePeerId, { reliable: true });
+  // Data connection with metadata
+  const dataConn = peer.connect(remotePeerId, {
+    reliable: true,
+    metadata: myPeerData
+  });
   setupDataConnection(dataConn);
   
-  // If we have local media, call the peer
-  if (localStream) {
-    callPeer(remotePeerId, localStream);
-  }
-  
-  // If we're sharing screen, call with screen too
-  if (screenStream) {
-    callPeer(remotePeerId, screenStream, 'screen');
-  }
+  // Send media streams
+  if (localStream) callPeer(remotePeerId, localStream, 'camera');
+  if (screenStream) callPeer(remotePeerId, screenStream, 'screen');
 }
 
 /**
- * Call a peer with media stream
+ * Call a peer with stream
  */
-function callPeer(remotePeerId, stream, streamType = 'camera') {
-  console.log(`Calling ${remotePeerId} with ${streamType}`);
+function callPeer(remotePeerId, stream, type = 'camera') {
+  console.log(`Calling ${remotePeerId} with ${type}`);
   
   const call = peer.call(remotePeerId, stream, {
-    metadata: { type: streamType }
+    metadata: { type, ...myPeerData }
   });
   
   call.on('stream', (remoteStream) => {
     handleRemoteStream(remotePeerId, remoteStream, call.metadata?.type);
   });
   
-  call.on('close', () => {
-    console.log('Call closed:', remotePeerId);
-  });
+  call.on('close', () => console.log('Call closed:', remotePeerId));
+  call.on('error', (err) => console.error('Call error:', err));
   
-  call.on('error', (err) => {
-    console.error('Call error:', err);
-  });
-  
-  // Store connection
   if (!connections.has(remotePeerId)) {
     connections.set(remotePeerId, { calls: [], streams: [] });
   }
@@ -131,19 +118,16 @@ function callPeer(remotePeerId, stream, streamType = 'camera') {
  * Handle incoming call
  */
 function handleIncomingCall(call) {
-  // Answer with local stream if available
+  console.log('Incoming call from:', call.peer, call.metadata);
   call.answer(localStream || undefined);
   
   call.on('stream', (remoteStream) => {
-    const streamType = call.metadata?.type || 'camera';
-    handleRemoteStream(call.peer, remoteStream, streamType);
+    const type = call.metadata?.type || 'camera';
+    handleRemoteStream(call.peer, remoteStream, type);
   });
   
-  call.on('close', () => {
-    console.log('Incoming call closed:', call.peer);
-  });
+  call.on('close', () => console.log('Incoming call closed'));
   
-  // Store connection
   if (!connections.has(call.peer)) {
     connections.set(call.peer, { calls: [], streams: [] });
   }
@@ -151,60 +135,68 @@ function handleIncomingCall(call) {
 }
 
 /**
+ * Handle incoming data connection
+ */
+function handleIncomingConnection(conn) {
+  console.log('Incoming connection from:', conn.peer, conn.metadata);
+  setupDataConnection(conn);
+}
+
+/**
  * Handle remote stream
  */
 function handleRemoteStream(peerId, stream, type) {
-  console.log(`Received ${type} stream from:`, peerId);
+  console.log(`Received ${type} from:`, peerId);
   
-  // Store stream
   if (!connections.has(peerId)) {
     connections.set(peerId, { calls: [], streams: [] });
   }
   connections.get(peerId).streams.push({ stream, type });
   
-  // Notify callback
-  if (type === 'screen' && callbacks.onScreenStream) {
-    callbacks.onScreenStream(peerId, stream);
-  } else if (callbacks.onRemoteStream) {
-    callbacks.onRemoteStream(peerId, stream);
+  if (type === 'screen') {
+    if (callbacks.onScreenStream) callbacks.onScreenStream(peerId, stream);
+  } else {
+    if (callbacks.onRemoteStream) callbacks.onRemoteStream(peerId, stream);
   }
 }
 
 /**
- * Setup data connection for chat
+ * Setup data connection
  */
 function setupDataConnection(conn) {
   conn.on('open', () => {
     console.log('Data connection open:', conn.peer);
     dataChannels.set(conn.peer, conn);
     
+    // Send our info
+    conn.send({ type: 'peerInfo', data: myPeerData });
+    
     if (callbacks.onConnection) {
-      callbacks.onConnection(conn.peer);
+      callbacks.onConnection(conn.peer, conn.metadata);
     }
   });
   
-  conn.on('data', (data) => {
-    if (data.type === 'chat' && callbacks.onChatMessage) {
-      callbacks.onChatMessage(conn.peer, data);
+  conn.on('data', (message) => {
+    if (message.type === 'chat' && callbacks.onChatMessage) {
+      callbacks.onChatMessage(conn.peer, message);
+    } else if (message.type === 'control' && callbacks.onControlMessage) {
+      callbacks.onControlMessage(conn.peer, message.data);
+    } else if (message.type === 'peerInfo' && callbacks.onConnection) {
+      callbacks.onConnection(conn.peer, message.data);
     }
   });
   
   conn.on('close', () => {
     console.log('Data connection closed:', conn.peer);
     dataChannels.delete(conn.peer);
-    
-    if (callbacks.onDisconnection) {
-      callbacks.onDisconnection(conn.peer);
-    }
+    if (callbacks.onDisconnection) callbacks.onDisconnection(conn.peer);
   });
   
-  conn.on('error', (err) => {
-    console.error('Data connection error:', err);
-  });
+  conn.on('error', (err) => console.error('Data error:', err));
 }
 
 /**
- * Send chat message to all peers
+ * Send chat message
  */
 export function sendChatMessage(displayName, text) {
   const message = {
@@ -215,12 +207,21 @@ export function sendChatMessage(displayName, text) {
   };
   
   dataChannels.forEach((conn) => {
-    if (conn.open) {
-      conn.send(message);
-    }
+    if (conn.open) conn.send(message);
   });
   
   return message;
+}
+
+/**
+ * Send control message
+ */
+export function sendControlMessage(data) {
+  const message = { type: 'control', data };
+  
+  dataChannels.forEach((conn) => {
+    if (conn.open) conn.send(message);
+  });
 }
 
 /**
@@ -228,7 +229,6 @@ export function sendChatMessage(displayName, text) {
  */
 export async function getLocalStream(audio = true, video = true) {
   try {
-    // Stop existing stream
     if (localStream) {
       localStream.getTracks().forEach(t => t.stop());
     }
@@ -247,13 +247,13 @@ export async function getLocalStream(audio = true, video = true) {
     });
     
     // Send to existing connections
-    connections.forEach((data, peerId) => {
+    connections.forEach((_, peerId) => {
       callPeer(peerId, localStream, 'camera');
     });
     
     return localStream;
   } catch (err) {
-    console.error('Error getting local stream:', err);
+    console.error('getUserMedia error:', err);
     throw err;
   }
 }
@@ -263,9 +263,7 @@ export async function getLocalStream(audio = true, video = true) {
  */
 export function toggleMic(enabled) {
   if (localStream) {
-    localStream.getAudioTracks().forEach(track => {
-      track.enabled = enabled;
-    });
+    localStream.getAudioTracks().forEach(t => t.enabled = enabled);
   }
   return enabled;
 }
@@ -275,86 +273,76 @@ export function toggleMic(enabled) {
  */
 export function toggleCamera(enabled) {
   if (localStream) {
-    localStream.getVideoTracks().forEach(track => {
-      track.enabled = enabled;
-    });
+    localStream.getVideoTracks().forEach(t => t.enabled = enabled);
   }
   return enabled;
 }
 
 /**
- * Start screen sharing
+ * Start screen share with audio option
  */
 export async function startScreenShare() {
   try {
+    // Request screen share with audio
+    // Using 'monitor' for entire screen (can minimize browser)
     screenStream = await navigator.mediaDevices.getDisplayMedia({
       video: {
         cursor: 'always',
-        displaySurface: 'monitor'
+        displaySurface: 'monitor' // Entire screen
       },
-      audio: false // No system audio
+      audio: {
+        echoCancellation: false,
+        noiseSuppression: false,
+        sampleRate: 44100
+      }
     });
     
     // Send to all peers
-    connections.forEach((data, peerId) => {
+    connections.forEach((_, peerId) => {
       callPeer(peerId, screenStream, 'screen');
     });
     
-    // Handle user stopping via browser UI
+    // Handle user stopping via browser
     screenStream.getVideoTracks()[0].onended = () => {
       stopScreenShare();
     };
     
     return screenStream;
   } catch (err) {
-    console.error('Error starting screen share:', err);
+    console.error('Screen share error:', err);
     throw err;
   }
 }
 
 /**
- * Stop screen sharing
+ * Stop screen share
  */
 export function stopScreenShare() {
   if (screenStream) {
-    screenStream.getTracks().forEach(track => track.stop());
+    screenStream.getTracks().forEach(t => t.stop());
     screenStream = null;
   }
 }
 
 /**
- * Get current streams
- */
-export function getLocalMediaStream() {
-  return localStream;
-}
-
-export function getScreenMediaStream() {
-  return screenStream;
-}
-
-/**
- * Get connected peer IDs
+ * Get connected peers
  */
 export function getConnectedPeers() {
   return Array.from(connections.keys());
 }
 
 /**
- * Disconnect from all peers and cleanup
+ * Disconnect and cleanup
  */
 export function disconnect() {
-  // Close all data channels
   dataChannels.forEach(conn => conn.close());
   dataChannels.clear();
   
-  // Close all calls
   connections.forEach(data => {
     data.calls.forEach(call => call.close());
   });
   connections.clear();
   
-  // Stop local streams
   if (localStream) {
     localStream.getTracks().forEach(t => t.stop());
     localStream = null;
@@ -365,11 +353,12 @@ export function disconnect() {
     screenStream = null;
   }
   
-  // Destroy peer
   if (peer) {
     peer.destroy();
     peer = null;
   }
+  
+  myPeerData = null;
 }
 
 /**
