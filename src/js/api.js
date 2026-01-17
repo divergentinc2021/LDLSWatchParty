@@ -2,136 +2,74 @@
 // API - Apps Script Backend Communication
 // ============================================
 
-// Apps Script Web App URL
 const API_URL = 'https://script.google.com/macros/s/AKfycbzGSfmG-uWUd-9WYc99JcBDcekFb4A8D4lv1JqKRUIHx3fI06dt4xd3R5oHR9Nm-gzfTA/exec';
 
-// Check if API is configured
-function checkApiConfig() {
-  if (API_URL.includes('YOUR_DEPLOYMENT_ID')) {
-    console.error('❌ API NOT CONFIGURED!');
-    console.error('Please update API_URL in src/js/api.js with your Apps Script deployment URL');
-    console.error('Example: https://script.google.com/macros/s/AKfycbw.../exec');
-    return false;
-  }
-  return true;
-}
-
-/**
- * Create a new room
- */
-export async function createRoom(email, name, password = '') {
-  if (!checkApiConfig()) {
-    return { success: false, error: 'API not configured. Check browser console (F12) for details.' };
-  }
-  
-  const params = new URLSearchParams({
-    action: 'createRoom',
-    email: email,
-    name: name,
-    password: password
-  });
-  
+async function apiCall(params) {
   try {
-    console.log('API Request: createRoom');
-    const response = await fetch(`${API_URL}?${params}`, { method: 'GET', mode: 'cors' });
+    const url = `${API_URL}?${new URLSearchParams(params)}`;
+    console.log('API:', params.action, params);
+    const response = await fetch(url, { method: 'GET', mode: 'cors' });
     const result = await response.json();
     console.log('API Response:', result);
     return result;
   } catch (err) {
     console.error('API Error:', err);
-    return { success: false, error: 'Network error. Check browser console (F12) for details.' };
+    return { success: false, error: 'Network error. Please try again.' };
   }
 }
 
-/**
- * Join an existing room
- */
-export async function joinRoom(code, email, name, password = '') {
-  if (!checkApiConfig()) {
-    return { success: false, error: 'API not configured. Check browser console (F12) for details.' };
-  }
-  
-  const params = new URLSearchParams({
-    action: 'joinRoom',
-    code: code,
-    email: email,
-    name: name,
-    password: password
-  });
-  
-  try {
-    console.log('API Request: joinRoom', code);
-    const response = await fetch(`${API_URL}?${params}`, { method: 'GET', mode: 'cors' });
-    const result = await response.json();
-    console.log('API Response:', result);
-    return result;
-  } catch (err) {
-    console.error('API Error:', err);
-    return { success: false, error: 'Network error. Check browser console (F12) for details.' };
-  }
-}
+// ============================================
+// Room Management
+// ============================================
+
+export const createRoom = (email, name, password = '') => 
+  apiCall({ action: 'createRoom', email, name, password });
+
+export const joinRoom = (code, email, name, password = '') => 
+  apiCall({ action: 'joinRoom', code, email, name, password });
+
+export const validateRoom = (code) => 
+  apiCall({ action: 'validateRoom', code });
+
+export const verifyAccess = (code, token, email) => 
+  apiCall({ action: 'verifyAccess', code, token, email });
+
+export const getRoomInfo = (code) => 
+  apiCall({ action: 'getRoomInfo', code });
+
+// ============================================
+// Peer Discovery - Critical for connecting participants!
+// ============================================
 
 /**
- * Validate if a room exists and check password requirement
+ * Register this peer as active in the room
+ * Called when entering the room
  */
-export async function validateRoom(code) {
-  if (!checkApiConfig()) {
-    return { success: false, error: 'API not configured' };
-  }
-  
-  const params = new URLSearchParams({ action: 'validateRoom', code: code });
-  
-  try {
-    const response = await fetch(`${API_URL}?${params}`, { method: 'GET', mode: 'cors' });
-    return await response.json();
-  } catch (err) {
-    console.error('API Error:', err);
-    return { success: false, error: 'Network error' };
-  }
-}
+export const registerPeer = (code, peerId, name, isHost) => 
+  apiCall({ action: 'registerPeer', code, peerId, name, isHost: isHost ? 'true' : 'false' });
 
 /**
- * Verify user has access to room (for email link validation)
+ * Get all currently active peers in the room
+ * Used to discover who to connect to
  */
-export async function verifyAccess(code, token, email) {
-  if (!checkApiConfig()) {
-    return { success: false, error: 'API not configured' };
-  }
-  
-  const params = new URLSearchParams({
-    action: 'verifyAccess',
-    code: code,
-    token: token,
-    email: email
-  });
-  
-  try {
-    console.log('API Request: verifyAccess', code);
-    const response = await fetch(`${API_URL}?${params}`, { method: 'GET', mode: 'cors' });
-    const result = await response.json();
-    console.log('API Response:', result);
-    return result;
-  } catch (err) {
-    console.error('API Error:', err);
-    return { success: false, error: 'Network error' };
-  }
-}
+export const getActivePeers = (code) => 
+  apiCall({ action: 'getActivePeers', code });
 
 /**
- * Get room info
+ * Send heartbeat to stay registered as active
+ * Should be called every 30 seconds
  */
-export async function getRoomInfo(code) {
-  if (!checkApiConfig()) {
-    return { success: false, error: 'API not configured' };
-  }
-  
-  const params = new URLSearchParams({ action: 'getRoomInfo', code: code });
-  
-  try {
-    const response = await fetch(`${API_URL}?${params}`, { method: 'GET', mode: 'cors' });
-    return await response.json();
-  } catch (err) {
-    console.error('API Error:', err);
-    return { success: false, error: 'Network error' };
-  }
-}
+export const peerHeartbeat = (code, peerId) => 
+  apiCall({ action: 'heartbeat', code, peerId });
+
+/**
+ * Unregister peer when leaving the room
+ */
+export const unregisterPeer = (code, peerId) => 
+  apiCall({ action: 'unregisterPeer', code, peerId });
+
+/**
+ * Get count of active sessions (for landing page)
+ */
+export const getActiveSessionCount = () => 
+  apiCall({ action: 'getActiveSessionCount' });
