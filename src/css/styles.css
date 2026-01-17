@@ -1198,3 +1198,342 @@ a:hover { color: var(--accent-hover); }
     border-radius: var(--radius-md) var(--radius-md) 0 0;
   }
 }
+
+/* ============================================
+   FOCUS MODE + PWA + ROLES
+   ============================================ */
+
+/* PWA Install Button */
+.btn-install {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+}
+
+.btn-install svg { flex-shrink: 0; }
+
+/* Role Badges */
+.role-badge {
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.role-badge.superhost {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: #000;
+}
+
+.role-badge.host {
+  background: var(--accent);
+  color: white;
+}
+
+/* Participant Role Icons */
+.participant-role {
+  font-size: 0.875rem;
+  margin-right: var(--space-xs);
+}
+
+.participant-actions {
+  display: flex;
+  gap: var(--space-xs);
+}
+
+.participant-actions button {
+  padding: 4px 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.participant-actions .btn-promote:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.participant-actions .btn-demote:hover {
+  background: var(--warning);
+  border-color: var(--warning);
+}
+
+.participant-actions .btn-kick:hover {
+  background: var(--error);
+  border-color: var(--error);
+  color: white;
+}
+
+/* PiP Button */
+.btn-pip {
+  position: absolute;
+  top: var(--space-md);
+  left: var(--space-md);
+  z-index: 25;
+  padding: var(--space-sm);
+  background: rgba(0,0,0,0.6);
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: var(--radius-md);
+  color: white;
+  cursor: pointer;
+  opacity: 0;
+  transition: all 0.2s ease;
+}
+
+.screen-container:hover .btn-pip,
+.screen-container:hover .btn-fullscreen {
+  opacity: 1;
+}
+
+.btn-pip:hover, .btn-fullscreen:hover {
+  background: rgba(255,255,255,0.2);
+}
+
+.btn-pip svg, .btn-fullscreen svg { width: 20px; height: 20px; }
+
+/* Controls Toggle Button */
+.btn-toggle-controls {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  padding: 6px 20px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  display: none;
+}
+
+.btn-toggle-controls:hover {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+.btn-toggle-controls svg { width: 16px; height: 16px; }
+
+/* ============================================
+   FOCUS MODE (Clean Theater)
+   ============================================ */
+
+.room.focus-mode {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: #000;
+}
+
+.room.focus-mode .btn-toggle-controls {
+  display: block;
+}
+
+/* Header - minimal, auto-hide */
+.room.focus-mode .room-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.8), transparent);
+  border: none;
+  padding: var(--space-sm) var(--space-lg);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.room.focus-mode:hover .room-header {
+  opacity: 1;
+}
+
+/* Main area fills screen */
+.room.focus-mode .room-main {
+  display: block;
+  position: absolute;
+  inset: 0;
+  background: #000;
+}
+
+.room.focus-mode .video-area {
+  position: absolute;
+  inset: 0;
+}
+
+.room.focus-mode .screen-container {
+  position: absolute;
+  inset: 0;
+}
+
+.room.focus-mode .screen-container video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* Webcams - small PiP in bottom-left */
+.room.focus-mode .webcam-grid {
+  position: absolute;
+  bottom: 70px;
+  left: var(--space-md);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: 0;
+  background: transparent;
+  max-height: calc(100vh - 150px);
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.room.focus-mode .webcam-grid::-webkit-scrollbar { display: none; }
+
+.room.focus-mode .webcam-tile {
+  width: 100px;
+  height: 75px;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  border: 2px solid rgba(255,255,255,0.1);
+  transition: all 0.2s ease;
+}
+
+.room.focus-mode .webcam-tile:hover {
+  transform: scale(1.1);
+  border-color: var(--accent);
+  z-index: 5;
+}
+
+/* Sidebar - auto-hide right */
+.room.focus-mode .sidebar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 300px;
+  z-index: 15;
+  transform: translateX(100%);
+  transition: transform 0.3s ease;
+  background: var(--bg-secondary);
+  border-left: 1px solid var(--border);
+}
+
+.room.focus-mode .sidebar:hover,
+.room.focus-mode .sidebar:focus-within {
+  transform: translateX(0);
+}
+
+/* Chat tab indicator */
+.room.focus-mode .sidebar::before {
+  content: '💬';
+  position: absolute;
+  left: -36px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 36px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md) 0 0 var(--radius-md);
+  font-size: 1rem;
+  opacity: 0.8;
+  cursor: pointer;
+}
+
+.room.focus-mode .sidebar:hover::before {
+  opacity: 0;
+}
+
+/* Footer - hideable */
+.room.focus-mode .room-footer {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  background: linear-gradient(to top, rgba(0,0,0,0.9), transparent);
+  border: none;
+  padding: var(--space-md) var(--space-lg);
+  transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+.room.focus-mode .room-footer.hidden-controls {
+  transform: translateY(100%);
+  opacity: 0;
+}
+
+/* Chat unread badge */
+.chat-unread-badge {
+  position: absolute;
+  left: -55px;
+  top: calc(50% - 30px);
+  min-width: 24px;
+  height: 24px;
+  padding: 0 6px;
+  background: var(--error);
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: white;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.room.focus-mode .chat-unread-badge.visible {
+  display: flex;
+}
+
+/* Compact control buttons in focus mode */
+.room.focus-mode .control-btn {
+  padding: var(--space-sm) var(--space-md);
+}
+
+.room.focus-mode .control-btn span {
+  display: none;
+}
+
+/* Mobile focus mode */
+@media (max-width: 768px) {
+  .room.focus-mode .webcam-grid {
+    bottom: 60px;
+    left: var(--space-xs);
+    flex-direction: row;
+    max-width: calc(100vw - 80px);
+    overflow-x: auto;
+  }
+  
+  .room.focus-mode .webcam-tile {
+    width: 70px;
+    height: 52px;
+  }
+  
+  .room.focus-mode .sidebar {
+    width: 100%;
+    height: 50%;
+    top: auto;
+    transform: translateY(100%);
+  }
+  
+  .room.focus-mode .sidebar:hover {
+    transform: translateY(0);
+  }
+  
+  .room.focus-mode .sidebar::before {
+    left: 50%;
+    top: -28px;
+    transform: translateX(-50%);
+    width: 50px;
+    height: 28px;
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+  }
+}
