@@ -7,7 +7,8 @@ import { firebaseConfig } from './firebase-config.js';
 
 // Import modules
 import { 
-  initAuth, 
+  initAuth,
+  waitForAuthReady,
   onAuthChange, 
   getUser, 
   getUserDisplayName,
@@ -595,6 +596,11 @@ async function init() {
   initChat(app);
   initWebRTC(app);
   console.log('All modules initialized');
+  
+  // IMPORTANT: Wait for auth to be ready before checking pending auth
+  console.log('Waiting for auth to be ready...');
+  await waitForAuthReady();
+  console.log('Auth is ready, checking for pending auth...');
   
   // Check for email link redirect
   if (hasPendingAuth()) {

@@ -16,24 +16,51 @@ import { actionCodeSettings } from './firebase-config.js';
 let auth;
 let currentUser = null;
 let authCallbacks = [];
+let authReady = false;
+let authReadyPromise = null;
+let authReadyResolve = null;
 
+/**
+ * Initialize auth and return a promise that resolves when auth is ready
+ */
 export function initAuth(firebaseApp) {
   auth = getAuth(firebaseApp);
   
+  // Create a promise that resolves when auth state is first determined
+  authReadyPromise = new Promise((resolve) => {
+    authReadyResolve = resolve;
+  });
+  
   // Listen for auth state changes
-  onAuthStateChanged(auth, (user) => {
+  const unsubscribe = onAuthStateChanged(auth, (user) => {
     currentUser = user;
     console.log('Auth state changed:', user ? user.email : 'signed out');
+    
+    // First time auth state is determined, mark as ready
+    if (!authReady) {
+      authReady = true;
+      authReadyResolve();
+      console.log('Auth is ready');
+    }
+    
     authCallbacks.forEach(cb => cb(user));
   });
   
   return auth;
 }
 
+/**
+ * Wait for auth to be ready
+ */
+export async function waitForAuthReady() {
+  if (authReady) return;
+  await authReadyPromise;
+}
+
 export function onAuthChange(callback) {
   authCallbacks.push(callback);
-  // Immediately call with current state
-  if (currentUser !== null) {
+  // Immediately call with current state if auth is ready
+  if (authReady) {
     callback(currentUser);
   }
 }
@@ -57,10 +84,13 @@ export function getUserDisplayName() {
  * Stores pending room info in localStorage for retrieval after redirect
  */
 export async function sendAuthLink(email, roomCode = null, isHost = false) {
+  // Make sure auth is ready
+  await waitForAuthReady();
+  
   // Store email for retrieval after redirect
   window.localStorage.setItem('emailForSignIn', email);
   
-  // FIXED: Always store isHost flag, not just when there's a roomCode
+  // Always store isHost flag
   window.localStorage.setItem('pendingIsHost', isHost ? 'true' : 'false');
   
   // Store room context if joining existing room
@@ -94,9 +124,31 @@ export async function sendAuthLink(email, roomCode = null, isHost = false) {
 }
 
 /**
+ * Check if current URL is a sign-in link (must be called after auth is ready)
+ */
+export function hasPendingAuth() {
+  if (!auth) {
+    console.warn('hasPendingAuth called before auth initialized');
+    return false;
+  }
+  
+  try {
+    const isPending = isSignInWithEmailLink(auth, window.location.href);
+    console.log('hasPendingAuth:', isPending);
+    return isPending;
+  } catch (err) {
+    console.error('Error checking pending auth:', err);
+    return false;
+  }
+}
+
+/**
  * Check if current URL is a sign-in link and complete auth
  */
 export async function handleEmailLinkRedirect() {
+  // Make sure auth is ready
+  await waitForAuthReady();
+  
   const url = window.location.href;
   
   console.log('Checking for email link redirect:', url);
@@ -113,7 +165,6 @@ export async function handleEmailLinkRedirect() {
   
   if (!email) {
     // Edge case: user opened link on different device
-    // Could prompt for email, but for simplicity we'll just fail
     throw new Error('Please use the same device/browser where you requested the link');
   }
   
@@ -143,10 +194,10 @@ export async function handleEmailLinkRedirect() {
   window.localStorage.removeItem('pendingRoomCode');
   window.localStorage.removeItem('pendingIsHost');
   
-  // Clean up URL (remove Firebase auth params but keep our params temporarily for logging)
+  // Clean up URL
   window.history.replaceState({}, document.title, window.location.pathname);
   
-  // Prefer URL params over localStorage (URL is more reliable after redirect)
+  // Prefer URL params over localStorage
   const finalRoomCode = urlRoom || storedRoomCode || null;
   const finalIsHost = urlHost || storedIsHost;
   
@@ -165,13 +216,4 @@ export async function handleEmailLinkRedirect() {
 export async function logout() {
   await signOut(auth);
   currentUser = null;
-}
-
-/**
- * Check if there's a pending auth from email link
- */
-export function hasPendingAuth() {
-  const isPending = isSignInWithEmailLink(auth, window.location.href);
-  console.log('hasPendingAuth:', isPending);
-  return isPending;
 }
