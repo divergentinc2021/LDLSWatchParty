@@ -1,0 +1,4 @@
+[33m5af6156[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m fix: wait for Firebase Auth to be ready before checking pending auth
+[33m32854d7[m security: move Firebase config to environment variables
+[33m545b47c[m complete setup
+[33m7377f87[m WatchPartyConfig Fixed

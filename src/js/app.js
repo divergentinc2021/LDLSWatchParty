@@ -88,6 +88,8 @@ const inputEmail = document.getElementById('input-email');
 const btnSendLink = document.getElementById('btn-send-link');
 const btnResend = document.getElementById('btn-resend');
 const pendingEmail = document.getElementById('pending-email');
+const pendingRoomInfo = document.getElementById('pending-room-info');
+const pendingRoomCodeDisplay = document.getElementById('pending-room-code');
 const errorMessage = document.getElementById('error-message');
 
 // Room
@@ -142,15 +144,26 @@ function hideAuthError() {
   authError.classList.add('hidden');
 }
 
-function showAuthPending(email) {
+function showAuthPending(email, roomCode = null) {
   authForm.classList.add('hidden');
   authPending.classList.remove('hidden');
   pendingEmail.textContent = email;
+  
+  // Show room code if joining an existing room
+  if (roomCode && pendingRoomInfo && pendingRoomCodeDisplay) {
+    pendingRoomInfo.classList.remove('hidden');
+    pendingRoomCodeDisplay.textContent = roomCode;
+  } else if (pendingRoomInfo) {
+    pendingRoomInfo.classList.add('hidden');
+  }
 }
 
 function resetAuthView() {
   authForm.classList.remove('hidden');
   authPending.classList.add('hidden');
+  if (pendingRoomInfo) {
+    pendingRoomInfo.classList.add('hidden');
+  }
   hideAuthError();
   inputEmail.value = '';
 }
@@ -245,7 +258,8 @@ btnSendLink.addEventListener('click', async () => {
     const isHost = pendingAction === 'create';
     console.log('Sending auth link - email:', email, 'roomCode:', pendingRoomCode, 'isHost:', isHost);
     await sendAuthLink(email, pendingRoomCode, isHost);
-    showAuthPending(email);
+    // Pass room code to show it in the pending screen
+    showAuthPending(email, pendingRoomCode);
     showToast('Check your email for the magic link!', 'success');
   } catch (err) {
     console.error('Auth error:', err);

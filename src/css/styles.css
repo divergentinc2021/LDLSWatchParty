@@ -405,6 +405,36 @@ input, button {
   margin-bottom: var(--space-md);
 }
 
+.pending-room-info {
+  margin: var(--space-lg) 0;
+  padding: var(--space-md);
+  background: var(--bg-elevated);
+  border-radius: var(--radius-md);
+  border: var(--border-subtle);
+}
+
+.pending-room-info p {
+  margin-bottom: var(--space-sm);
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+.pending-code {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 1.75rem;
+  font-weight: 600;
+  color: var(--accent);
+  letter-spacing: 0.15em;
+  margin: var(--space-sm) 0;
+}
+
+.pending-note {
+  font-size: 0.75rem !important;
+  color: var(--text-muted) !important;
+  margin-bottom: 0 !important;
+}
+
 .auth-error {
   margin-top: var(--space-md);
   padding: var(--space-md);

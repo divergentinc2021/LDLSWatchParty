@@ -289,10 +289,9 @@ export async function startScreenShare() {
         cursor: 'always',
         displaySurface: 'monitor'
       },
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true
-      }
+      // Disable system audio capture - it picks up notification sounds ("death sound")
+      // Users can still share tab audio by checking "Share tab audio" in browser dialog
+      audio: false
     });
     
     // Send screen stream to all peers
