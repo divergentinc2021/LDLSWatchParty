@@ -581,3 +581,620 @@ a:hover { color: var(--accent-hover); }
 
 .btn-hint { display: block; font-size: 0.6875rem; font-weight: 400; opacity: 0.7; margin-top: 2px; }
 #btn-start-session:not(:disabled) .btn-hint { display: none; }
+
+/* ============================================
+   THEATER MODE - Fullscreen with PiP
+   ============================================ */
+
+/* Theater mode active on room */
+.room.theater-mode {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: #000;
+}
+
+.room.theater-mode .room-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.8) 0%, transparent 100%);
+  border: none;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.room.theater-mode:hover .room-header,
+.room.theater-mode .room-header:focus-within {
+  opacity: 1;
+}
+
+.room.theater-mode .room-main {
+  display: block;
+  position: absolute;
+  inset: 0;
+  background: #000;
+}
+
+/* Theater mode - Video area fills screen */
+.room.theater-mode .video-area {
+  position: absolute;
+  inset: 0;
+}
+
+.room.theater-mode .screen-container {
+  position: absolute;
+  inset: 0;
+}
+
+.room.theater-mode .screen-container video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* Theater mode - Webcams as PiP in bottom-left */
+.room.theater-mode .webcam-grid {
+  position: absolute;
+  bottom: 80px;
+  left: var(--space-md);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: 0;
+  background: transparent;
+  max-height: calc(100vh - 180px);
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.room.theater-mode .webcam-grid::-webkit-scrollbar {
+  display: none;
+}
+
+.room.theater-mode .webcam-tile {
+  width: 160px;
+  height: 120px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  border: 2px solid rgba(255,255,255,0.1);
+  transition: all 0.2s ease;
+}
+
+.room.theater-mode .webcam-tile:hover {
+  transform: scale(1.05);
+  border-color: var(--accent);
+}
+
+.room.theater-mode .webcam-tile.speaking {
+  border-color: var(--success);
+  box-shadow: 0 0 20px rgba(34, 197, 94, 0.4);
+}
+
+/* Theater mode - Sidebar auto-hide */
+.room.theater-mode .sidebar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 320px;
+  z-index: 15;
+  transform: translateX(100%);
+  transition: transform 0.3s ease;
+  background: var(--bg-secondary);
+  border-left: 1px solid var(--border);
+}
+
+.room.theater-mode .sidebar:hover,
+.room.theater-mode .sidebar:focus-within,
+.room.theater-mode .sidebar.pinned {
+  transform: translateX(0);
+}
+
+/* Sidebar toggle tab */
+.room.theater-mode .sidebar::before {
+  content: '';
+  position: absolute;
+  left: -40px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 40px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md) 0 0 var(--radius-md);
+  cursor: pointer;
+  font-size: 1.25rem;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.room.theater-mode .sidebar:hover::before {
+  opacity: 0;
+}
+
+/* Theater mode - Footer controls minimized */
+.room.theater-mode .room-footer {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  background: linear-gradient(to top, rgba(0,0,0,0.9) 0%, transparent 100%);
+  border: none;
+  padding: var(--space-md) var(--space-lg);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.room.theater-mode:hover .room-footer,
+.room.theater-mode .room-footer:focus-within {
+  opacity: 1;
+}
+
+.room.theater-mode .share-link-bar {
+  display: none;
+}
+
+/* Theater mode toggle button */
+.btn-theater {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-md) var(--space-lg);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-theater svg { width: 24px; height: 24px; }
+.btn-theater:hover { background: var(--bg-hover); color: var(--text-primary); }
+.btn-theater[data-active="true"] { background: var(--accent); border-color: var(--accent); color: white; }
+
+/* Fullscreen button */
+.btn-fullscreen {
+  position: absolute;
+  top: var(--space-md);
+  right: var(--space-md);
+  z-index: 25;
+  padding: var(--space-sm);
+  background: rgba(0,0,0,0.6);
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: var(--radius-md);
+  color: white;
+  cursor: pointer;
+  opacity: 0;
+  transition: all 0.2s ease;
+}
+
+.room.theater-mode .btn-fullscreen {
+  opacity: 0;
+}
+
+.room.theater-mode:hover .btn-fullscreen {
+  opacity: 1;
+}
+
+.btn-fullscreen:hover {
+  background: rgba(255,255,255,0.2);
+}
+
+.btn-fullscreen svg { width: 20px; height: 20px; }
+
+/* Stream buffering indicator */
+.buffer-indicator {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-xl);
+  background: rgba(0,0,0,0.85);
+  border-radius: var(--radius-xl);
+  text-align: center;
+}
+
+.buffer-indicator.hidden { display: none; }
+
+.buffer-spinner {
+  width: 48px;
+  height: 48px;
+  border: 4px solid var(--bg-hover);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.buffer-indicator p {
+  color: var(--text-primary);
+  font-size: 1rem;
+}
+
+.buffer-indicator .countdown {
+  font-family: var(--font-mono);
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+/* Unread chat indicator */
+.chat-unread-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  background: var(--error);
+  border-radius: 10px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Mobile theater adjustments */
+@media (max-width: 768px) {
+  .room.theater-mode .webcam-grid {
+    bottom: 70px;
+    left: var(--space-sm);
+    flex-direction: row;
+    max-width: calc(100vw - 100px);
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  
+  .room.theater-mode .webcam-tile {
+    width: 100px;
+    height: 75px;
+  }
+  
+  .room.theater-mode .sidebar {
+    width: 100%;
+    height: 60%;
+    top: auto;
+    bottom: 0;
+    transform: translateY(100%);
+  }
+  
+  .room.theater-mode .sidebar:hover,
+  .room.theater-mode .sidebar.pinned {
+    transform: translateY(0);
+  }
+  
+  .room.theater-mode .sidebar::before {
+    left: 50%;
+    top: -30px;
+    transform: translateX(-50%);
+    width: 60px;
+    height: 30px;
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+  }
+}
+
+/* ============================================
+   THEATER MODE - Fullscreen with PiP
+   ============================================ */
+
+/* Theater mode active on room */
+.room.theater-mode {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: #000;
+}
+
+.room.theater-mode .room-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.8) 0%, transparent 100%);
+  border: none;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.room.theater-mode:hover .room-header,
+.room.theater-mode .room-header:focus-within {
+  opacity: 1;
+}
+
+.room.theater-mode .room-main {
+  display: block;
+  position: absolute;
+  inset: 0;
+  background: #000;
+}
+
+/* Theater mode - Video area fills screen */
+.room.theater-mode .video-area {
+  position: absolute;
+  inset: 0;
+}
+
+.room.theater-mode .screen-container {
+  position: absolute;
+  inset: 0;
+}
+
+.room.theater-mode .screen-container video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* Theater mode - Webcams as PiP in bottom-left */
+.room.theater-mode .webcam-grid {
+  position: absolute;
+  bottom: 80px;
+  left: var(--space-md);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: 0;
+  background: transparent;
+  max-height: calc(100vh - 180px);
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.room.theater-mode .webcam-grid::-webkit-scrollbar {
+  display: none;
+}
+
+.room.theater-mode .webcam-tile {
+  width: 160px;
+  height: 120px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  border: 2px solid rgba(255,255,255,0.1);
+  transition: all 0.2s ease;
+}
+
+.room.theater-mode .webcam-tile:hover {
+  transform: scale(1.05);
+  border-color: var(--accent);
+}
+
+.room.theater-mode .webcam-tile.speaking {
+  border-color: var(--success);
+  box-shadow: 0 0 20px rgba(34, 197, 94, 0.4);
+}
+
+/* Theater mode - Sidebar auto-hide */
+.room.theater-mode .sidebar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 320px;
+  z-index: 15;
+  transform: translateX(100%);
+  transition: transform 0.3s ease;
+  background: var(--bg-secondary);
+  border-left: 1px solid var(--border);
+}
+
+.room.theater-mode .sidebar:hover,
+.room.theater-mode .sidebar:focus-within,
+.room.theater-mode .sidebar.pinned {
+  transform: translateX(0);
+}
+
+/* Sidebar toggle tab */
+.room.theater-mode .sidebar::before {
+  content: '💬';
+  position: absolute;
+  left: -40px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 40px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md) 0 0 var(--radius-md);
+  cursor: pointer;
+  font-size: 1.25rem;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.room.theater-mode .sidebar:hover::before {
+  opacity: 0;
+}
+
+/* Theater mode - Footer controls minimized */
+.room.theater-mode .room-footer {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  background: linear-gradient(to top, rgba(0,0,0,0.9) 0%, transparent 100%);
+  border: none;
+  padding: var(--space-md) var(--space-lg);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.room.theater-mode:hover .room-footer,
+.room.theater-mode .room-footer:focus-within {
+  opacity: 1;
+}
+
+.room.theater-mode .share-link-bar {
+  display: none;
+}
+
+/* Theater mode toggle button */
+.btn-theater {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-md) var(--space-lg);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-theater svg { width: 24px; height: 24px; }
+.btn-theater:hover { background: var(--bg-hover); color: var(--text-primary); }
+.btn-theater[data-active="true"] { background: var(--accent); border-color: var(--accent); color: white; }
+
+/* Fullscreen button */
+.btn-fullscreen {
+  position: absolute;
+  top: var(--space-md);
+  right: var(--space-md);
+  z-index: 25;
+  padding: var(--space-sm);
+  background: rgba(0,0,0,0.6);
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: var(--radius-md);
+  color: white;
+  cursor: pointer;
+  opacity: 0;
+  transition: all 0.2s ease;
+}
+
+.screen-container:hover .btn-fullscreen {
+  opacity: 1;
+}
+
+.btn-fullscreen:hover {
+  background: rgba(255,255,255,0.2);
+}
+
+.btn-fullscreen svg { width: 20px; height: 20px; }
+
+/* Stream buffering indicator */
+.buffer-indicator {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-xl);
+  background: rgba(0,0,0,0.85);
+  border-radius: var(--radius-xl);
+  text-align: center;
+}
+
+.buffer-indicator.hidden { display: none; }
+
+.buffer-spinner {
+  width: 48px;
+  height: 48px;
+  border: 4px solid var(--bg-hover);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.buffer-indicator p {
+  color: var(--text-primary);
+  font-size: 1rem;
+}
+
+.buffer-indicator .countdown {
+  font-family: var(--font-mono);
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+/* Unread chat indicator */
+.sidebar-tab {
+  position: relative;
+}
+
+.chat-unread-badge {
+  position: absolute;
+  top: 50%;
+  left: -60px;
+  transform: translateY(-50%);
+  min-width: 24px;
+  height: 24px;
+  padding: 0 8px;
+  background: var(--error);
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: white;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.room.theater-mode .chat-unread-badge.visible {
+  display: flex;
+}
+
+/* Mobile theater adjustments */
+@media (max-width: 768px) {
+  .room.theater-mode .webcam-grid {
+    bottom: 70px;
+    left: var(--space-sm);
+    flex-direction: row;
+    max-width: calc(100vw - 100px);
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  
+  .room.theater-mode .webcam-tile {
+    width: 100px;
+    height: 75px;
+  }
+  
+  .room.theater-mode .sidebar {
+    width: 100%;
+    height: 60%;
+    top: auto;
+    bottom: 0;
+    transform: translateY(100%);
+  }
+  
+  .room.theater-mode .sidebar:hover,
+  .room.theater-mode .sidebar.pinned {
+    transform: translateY(0);
+  }
+  
+  .room.theater-mode .sidebar::before {
+    left: 50%;
+    top: -30px;
+    transform: translateX(-50%);
+    width: 60px;
+    height: 30px;
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+  }
+}

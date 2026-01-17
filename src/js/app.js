@@ -1,6 +1,6 @@
 // ============================================
 // Watch Party - Main Application
-// New Flow: Create/Join → Lobby → Room
+// With Theater Mode + PiP
 // ============================================
 
 import * as api from './api.js';
@@ -14,9 +14,14 @@ let currentToken = null;
 let currentUser = null;
 let isHost = false;
 let hasPassword = false;
-let lobbyPeers = new Map(); // peerId -> {name, isHost}
+let lobbyPeers = new Map();
 let participants = new Map();
 let sessionStarted = false;
+
+// Theater Mode State
+let theaterMode = false;
+let unreadChatCount = 0;
+let sidebarVisible = false;
 
 // ============================================
 // DOM Elements
@@ -54,24 +59,31 @@ const btnStartSession = document.getElementById('btn-start-session');
 const btnLeaveLobby = document.getElementById('btn-leave-lobby');
 
 // Room
+const roomContainer = document.getElementById('room-container');
 const headerRoomCode = document.getElementById('header-room-code');
 const hostBadge = document.getElementById('host-badge');
 const passwordBadge = document.getElementById('password-badge');
 const participantCount = document.getElementById('participant-count');
 const participantsList = document.getElementById('participants-list');
+const sidebar = document.getElementById('sidebar');
 const chatMessages = document.getElementById('chat-messages');
 const chatForm = document.getElementById('chat-form');
 const chatInput = document.getElementById('chat-input');
+const chatUnreadBadge = document.getElementById('chat-unread-badge');
 const localVideo = document.getElementById('local-video');
 const screenVideo = document.getElementById('screen-video');
 const screenPlaceholder = document.getElementById('screen-placeholder');
 const screenPlaceholderText = document.getElementById('screen-placeholder-text');
 const webcamGrid = document.getElementById('webcam-grid');
+const bufferIndicator = document.getElementById('buffer-indicator');
+const bufferCountdown = document.getElementById('buffer-countdown');
 
 // Controls
 const btnMic = document.getElementById('btn-mic');
 const btnCam = document.getElementById('btn-cam');
 const btnScreen = document.getElementById('btn-screen');
+const btnTheater = document.getElementById('btn-theater');
+const btnFullscreen = document.getElementById('btn-fullscreen');
 const btnLeave = document.getElementById('btn-leave');
 const btnCopyRoom = document.getElementById('btn-copy-room');
 const btnBackHome = document.getElementById('btn-back-home');
@@ -84,17 +96,14 @@ document.addEventListener('DOMContentLoaded', init);
 async function init() {
   console.log('Watch Party initializing...');
   
-  // Check URL for room link
   const path = window.location.pathname;
   const match = path.match(/^\/([A-Z0-9]{5})-([a-z0-9]{12})$/i);
   
   if (match) {
-    // Direct link: /ROOMCODE-TOKEN
     const code = match[1].toUpperCase();
     const token = match[2];
     await handleDirectLink(code, token);
   } else {
-    // Landing page - fetch active session count
     showView('landing');
     fetchActiveSessionCount();
   }
@@ -146,15 +155,157 @@ function setupEventListeners() {
   btnMic?.addEventListener('click', toggleMic);
   btnCam?.addEventListener('click', toggleCam);
   btnScreen?.addEventListener('click', toggleScreen);
+  btnTheater?.addEventListener('click', toggleTheaterMode);
+  btnFullscreen?.addEventListener('click', toggleFullscreen);
   btnLeave?.addEventListener('click', leaveRoom);
   btnCopyRoom?.addEventListener('click', copyRoomLink);
   
   // Chat
   chatForm?.addEventListener('submit', handleChatSubmit);
+  chatInput?.addEventListener('focus', () => {
+    // Clear unread count when focusing chat
+    if (theaterMode) {
+      unreadChatCount = 0;
+      updateUnreadBadge();
+    }
+  });
+  
+  // Sidebar hover tracking in theater mode
+  sidebar?.addEventListener('mouseenter', () => {
+    sidebarVisible = true;
+    unreadChatCount = 0;
+    updateUnreadBadge();
+  });
+  sidebar?.addEventListener('mouseleave', () => {
+    sidebarVisible = false;
+  });
   
   // Kicked
   btnBackHome?.addEventListener('click', () => {
     window.location.href = '/';
+  });
+  
+  // Keyboard shortcuts
+  document.addEventListener('keydown', handleKeyboard);
+  
+  // Fullscreen change detection
+  document.addEventListener('fullscreenchange', handleFullscreenChange);
+}
+
+function handleKeyboard(e) {
+  // Only in room view
+  if (!views.room.classList.contains('active')) return;
+  
+  // Don't trigger if typing in input
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  
+  switch (e.key.toLowerCase()) {
+    case 't':
+      toggleTheaterMode();
+      break;
+    case 'f':
+      toggleFullscreen();
+      break;
+    case 'm':
+      toggleMic();
+      break;
+    case 'v':
+      toggleCam();
+      break;
+    case 'escape':
+      if (theaterMode) toggleTheaterMode();
+      break;
+  }
+}
+
+// ============================================
+// Theater Mode
+// ============================================
+function toggleTheaterMode() {
+  theaterMode = !theaterMode;
+  roomContainer.classList.toggle('theater-mode', theaterMode);
+  btnTheater.dataset.active = String(theaterMode);
+  
+  if (theaterMode) {
+    // Reset unread counter when entering theater mode
+    unreadChatCount = 0;
+    updateUnreadBadge();
+  }
+  
+  console.log('Theater mode:', theaterMode);
+}
+
+function enterTheaterMode() {
+  if (!theaterMode) {
+    theaterMode = true;
+    roomContainer.classList.add('theater-mode');
+    btnTheater.dataset.active = 'true';
+    unreadChatCount = 0;
+    updateUnreadBadge();
+  }
+}
+
+function exitTheaterMode() {
+  if (theaterMode) {
+    theaterMode = false;
+    roomContainer.classList.remove('theater-mode');
+    btnTheater.dataset.active = 'false';
+  }
+}
+
+function updateUnreadBadge() {
+  if (chatUnreadBadge) {
+    chatUnreadBadge.textContent = unreadChatCount > 99 ? '99+' : unreadChatCount;
+    chatUnreadBadge.classList.toggle('visible', unreadChatCount > 0 && theaterMode && !sidebarVisible);
+  }
+}
+
+// ============================================
+// Fullscreen
+// ============================================
+function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    roomContainer.requestFullscreen().catch(err => {
+      console.error('Fullscreen error:', err);
+    });
+  } else {
+    document.exitFullscreen();
+  }
+}
+
+function handleFullscreenChange() {
+  const isFullscreen = !!document.fullscreenElement;
+  
+  if (btnFullscreen) {
+    btnFullscreen.querySelector('.icon-expand')?.classList.toggle('hidden', isFullscreen);
+    btnFullscreen.querySelector('.icon-compress')?.classList.toggle('hidden', !isFullscreen);
+  }
+  
+  // Auto-enter theater mode when going fullscreen
+  if (isFullscreen && !theaterMode) {
+    enterTheaterMode();
+  }
+}
+
+// ============================================
+// Buffer/Loading Indicator
+// ============================================
+function showBufferIndicator(seconds = 3) {
+  return new Promise((resolve) => {
+    bufferIndicator.classList.remove('hidden');
+    let remaining = seconds;
+    bufferCountdown.textContent = remaining;
+    
+    const interval = setInterval(() => {
+      remaining--;
+      bufferCountdown.textContent = remaining;
+      
+      if (remaining <= 0) {
+        clearInterval(interval);
+        bufferIndicator.classList.add('hidden');
+        resolve();
+      }
+    }, 1000);
   });
 }
 
@@ -164,7 +315,6 @@ function setupEventListeners() {
 async function handleDirectLink(code, token) {
   console.log('Direct link detected:', code);
   
-  // Validate room exists
   const result = await api.validateRoom(code);
   
   if (!result.success || !result.valid) {
@@ -174,10 +324,8 @@ async function handleDirectLink(code, token) {
     return;
   }
   
-  // Get room info
   const roomInfo = await api.getRoomInfo(code);
   
-  // Show join form
   currentRoom = code;
   currentToken = token;
   hasPassword = result.hasPassword;
@@ -217,17 +365,13 @@ async function handleCreateRoom(e) {
       return;
     }
     
-    // Store state
     currentRoom = result.code;
     currentToken = result.token;
     currentUser = { id: generateId(), name, email };
     isHost = true;
     hasPassword = !!password;
     
-    // Update URL
     window.history.replaceState({}, '', `/${result.code}-${result.token}`);
-    
-    // Go to lobby
     enterLobby();
     
   } catch (err) {
@@ -264,7 +408,6 @@ async function handleJoinRoom(e) {
   }
   
   try {
-    // Validate room
     const validation = await api.validateRoom(code);
     
     if (!validation.success || !validation.valid) {
@@ -273,42 +416,21 @@ async function handleJoinRoom(e) {
       return;
     }
     
-    // Check password
-    if (validation.hasPassword) {
-      const joinResult = await api.joinRoom(code, `${name.toLowerCase().replace(/\s+/g, '')}@guest.local`, name, password);
-      
-      if (!joinResult.success) {
-        showToast(joinResult.error || 'Failed to join', 'error');
-        btn.classList.remove('loading');
-        return;
-      }
-      
-      currentToken = joinResult.token;
-    } else {
-      // Get token from room
-      const roomInfo = await api.getRoomInfo(code);
-      // For non-password rooms, we need the token. Let's join without password
-      const joinResult = await api.joinRoom(code, `${name.toLowerCase().replace(/\s+/g, '')}@guest.local`, name, '');
-      
-      if (!joinResult.success) {
-        showToast(joinResult.error || 'Failed to join', 'error');
-        btn.classList.remove('loading');
-        return;
-      }
-      
-      currentToken = joinResult.token;
+    const joinResult = await api.joinRoom(code, `${name.toLowerCase().replace(/\s+/g, '')}@guest.local`, name, password);
+    
+    if (!joinResult.success) {
+      showToast(joinResult.error || 'Failed to join', 'error');
+      btn.classList.remove('loading');
+      return;
     }
     
-    // Store state
     currentRoom = code;
+    currentToken = joinResult.token;
     currentUser = { id: generateId(), name };
     isHost = false;
     hasPassword = validation.hasPassword;
     
-    // Update URL
     window.history.replaceState({}, '', `/${code}-${currentToken}`);
-    
-    // Go to lobby
     enterLobby();
     
   } catch (err) {
@@ -338,7 +460,6 @@ async function handleJoinViaLink(e) {
   }
   
   try {
-    // Try to join
     if (hasPassword) {
       const result = await api.joinRoom(currentRoom, `${name.toLowerCase().replace(/\s+/g, '')}@guest.local`, name, password);
       
@@ -349,11 +470,8 @@ async function handleJoinViaLink(e) {
       }
     }
     
-    // Store state
     currentUser = { id: generateId(), name };
     isHost = false;
-    
-    // Go to lobby
     enterLobby();
     
   } catch (err) {
@@ -370,23 +488,20 @@ async function handleJoinViaLink(e) {
 async function enterLobby() {
   console.log('Entering lobby for room:', currentRoom);
   
-  // Update lobby UI
   lobbyRoomCode.textContent = currentRoom;
   lobbyPasswordBadge.classList.toggle('hidden', !hasPassword);
   lobbyShareUrl.textContent = `${window.location.origin}/${currentRoom}-${currentToken}`;
   lobbyStatusText.textContent = 'Connecting...';
   
-  // Clear and add self
   lobbyPeers.clear();
   lobbyPeers.set(currentUser.id, { name: currentUser.name, isHost });
   updateLobbyUI();
   
   showView('lobby');
   
-  // Setup WebRTC callbacks
   webrtc.setCallbacks({
     onPeerOpen: (peerId) => {
-      console.log('✅ Connected to signaling server:', peerId);
+      console.log('✅ Connected:', peerId);
       lobbyStatusText.textContent = isHost 
         ? 'Waiting for participants to join...' 
         : 'Connecting to host...';
@@ -402,7 +517,6 @@ async function enterLobby() {
         updateLobbyUI();
         
         if (sessionStarted) {
-          // Session already started, add to room
           participants.set(peerId, { name: peerData.name, isHost: peerData.isHost });
           updateParticipantsList();
         }
@@ -417,12 +531,18 @@ async function enterLobby() {
       removeRemoteVideo(peerId);
     },
     onRemoteStream: (peerId, stream) => addRemoteVideo(peerId, stream),
-    onScreenStream: (peerId, stream) => showScreenShare(peerId, stream),
-    onChatMessage: (peerId, msg) => addChatMessage(msg.displayName, msg.text, msg.timestamp),
+    onScreenStream: (peerId, stream) => showRemoteScreenShare(peerId, stream),
+    onChatMessage: (peerId, msg) => {
+      addChatMessage(msg.displayName, msg.text, msg.timestamp);
+      // Increment unread count if in theater mode and sidebar not visible
+      if (theaterMode && !sidebarVisible) {
+        unreadChatCount++;
+        updateUnreadBadge();
+      }
+    },
     onControlMessage: (peerId, data) => handleControlMessage(peerId, data)
   });
   
-  // Initialize WebRTC
   try {
     await webrtc.initPeer(currentRoom, currentUser.id, {
       name: currentUser.name,
@@ -435,25 +555,21 @@ async function enterLobby() {
 }
 
 function updateLobbyUI() {
-  // Count
   const count = lobbyPeers.size;
   lobbyCount.textContent = count;
   
-  // Enable start button for host when 2+ peers
   if (isHost) {
     btnStartSession.disabled = count < 2;
   } else {
     btnStartSession.style.display = 'none';
   }
   
-  // Update status text
   if (count >= 2) {
     lobbyStatusText.textContent = isHost 
       ? 'Ready to start!' 
       : 'Waiting for host to start the session...';
   }
   
-  // Render list
   lobbyParticipantsList.innerHTML = '';
   
   lobbyPeers.forEach((peer, peerId) => {
@@ -486,10 +602,7 @@ function startSession() {
   console.log('🎬 Starting session!');
   sessionStarted = true;
   
-  // Notify all peers
   webrtc.sendControlMessage({ type: 'sessionStart' });
-  
-  // Move to room
   enterRoom();
 }
 
@@ -504,13 +617,11 @@ function leaveLobby() {
 function enterRoom() {
   console.log('Entering room:', currentRoom);
   
-  // Copy lobby peers to participants
   participants.clear();
   lobbyPeers.forEach((peer, peerId) => {
     participants.set(peerId, peer);
   });
   
-  // Update UI
   headerRoomCode.textContent = currentRoom;
   hostBadge.classList.toggle('hidden', !isHost);
   passwordBadge.classList.toggle('hidden', !hasPassword);
@@ -523,8 +634,6 @@ function enterRoom() {
   addSystemMessage('Session started!');
   
   showView('room');
-  
-  // Get local media
   initLocalMedia();
 }
 
@@ -561,9 +670,18 @@ function handleControlMessage(peerId, data) {
       
     case 'grantScreen':
       if (data.targetId === currentUser.id) {
-        btnScreen.disabled = false;
         showToast('Host granted you screen sharing permission', 'success');
       }
+      break;
+      
+    case 'screenStart':
+      // Auto-enter theater mode when someone starts sharing
+      enterTheaterMode();
+      break;
+      
+    case 'screenStop':
+      // Optionally exit theater mode
+      // exitTheaterMode();
       break;
   }
 }
@@ -592,16 +710,33 @@ async function toggleScreen() {
     webrtc.stopScreenShare();
     btnScreen.dataset.active = 'false';
     screenVideo.srcObject = null;
+    screenVideo.classList.remove('has-stream');
     screenPlaceholder.classList.remove('hidden');
+    
+    // Notify others
+    webrtc.sendControlMessage({ type: 'screenStop' });
   } else {
     try {
+      // Show buffer countdown
+      await showBufferIndicator(3);
+      
       const stream = await webrtc.startScreenShare();
       screenVideo.srcObject = stream;
       screenVideo.classList.add('has-stream');
       screenPlaceholder.classList.add('hidden');
       btnScreen.dataset.active = 'true';
+      
+      // Auto-enter theater mode when starting screen share
+      enterTheaterMode();
+      
+      // Notify others
+      webrtc.sendControlMessage({ type: 'screenStart' });
+      
     } catch (err) {
       console.error('Screen share error:', err);
+      if (err.name !== 'NotAllowedError') {
+        showToast('Failed to share screen', 'error');
+      }
     }
   }
 }
@@ -654,7 +789,6 @@ function updateParticipantsList() {
     participantsList.appendChild(div);
   });
   
-  // Add event listeners
   participantsList.querySelectorAll('.btn-kick').forEach(btn => {
     btn.addEventListener('click', () => kickParticipant(btn.dataset.peer));
   });
@@ -679,7 +813,6 @@ function grantScreen(peerId) {
 // Video Handling
 // ============================================
 function addRemoteVideo(peerId, stream) {
-  // Remove existing if any
   removeRemoteVideo(peerId);
   
   const tile = document.createElement('div');
@@ -693,7 +826,7 @@ function addRemoteVideo(peerId, stream) {
   
   const name = document.createElement('span');
   name.className = 'webcam-name';
-  name.textContent = participants.get(peerId)?.name || 'Participant';
+  name.textContent = participants.get(peerId)?.name || lobbyPeers.get(peerId)?.name || 'Participant';
   
   tile.appendChild(video);
   tile.appendChild(name);
@@ -705,10 +838,14 @@ function removeRemoteVideo(peerId) {
   if (tile) tile.remove();
 }
 
-function showScreenShare(peerId, stream) {
+function showRemoteScreenShare(peerId, stream) {
+  console.log('📺 Showing remote screen share from:', peerId);
   screenVideo.srcObject = stream;
   screenVideo.classList.add('has-stream');
   screenPlaceholder.classList.add('hidden');
+  
+  // Auto-enter theater mode when receiving screen share
+  enterTheaterMode();
 }
 
 // ============================================
