@@ -14,11 +14,14 @@ const ROOMS_SHEET = 'Rooms';
 const PARTICIPANTS_SHEET = 'Participants';
 const ROOM_EXPIRY_HOURS = 24;
 
-// Allowed origins for CORS (add your Netlify domain)
+// Your Netlify app URL
+const APP_URL = 'https://ldlswatchparty.netlify.app';
+
+// Allowed origins for CORS
 const ALLOWED_ORIGINS = [
   'http://localhost:3000',
   'http://localhost:5173',
-  'https://your-app.netlify.app' // Replace with your actual domain
+  APP_URL
 ];
 
 // ============================================
@@ -81,7 +84,7 @@ function jsonResponse(data, origin) {
  * Generate a random 5-character alphanumeric code
  */
 function generateRoomCode() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Removed confusing chars
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let code = '';
   for (let i = 0; i < 5; i++) {
     code += chars.charAt(Math.floor(Math.random() * chars.length));
@@ -99,7 +102,6 @@ function createRoom(email, name) {
   
   const displayName = name || email.split('@')[0];
   
-  // Generate unique code
   let code = generateRoomCode();
   while (roomExists(code)) {
     code = generateRoomCode();
@@ -108,14 +110,10 @@ function createRoom(email, name) {
   const now = new Date();
   const expiresAt = new Date(now.getTime() + ROOM_EXPIRY_HOURS * 60 * 60 * 1000);
   
-  // Save to spreadsheet
   const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(ROOMS_SHEET);
   sheet.appendRow([code, email, displayName, now.toISOString(), expiresAt.toISOString(), 'active']);
   
-  // Add host as participant
   addParticipant(code, email, displayName);
-  
-  // Send email with room code
   sendRoomEmail(email, displayName, code, true);
   
   return { 
@@ -154,10 +152,7 @@ function joinRoom(code, email, name) {
   
   const displayName = name || email.split('@')[0];
   
-  // Add as participant
   addParticipant(normalizedCode, email, displayName);
-  
-  // Send email with room access
   sendRoomEmail(email, displayName, normalizedCode, false);
   
   return { 
@@ -266,11 +261,10 @@ function getRoomByCode(code) {
 function addParticipant(code, email, name) {
   const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(PARTICIPANTS_SHEET);
   
-  // Check if already a participant
   const data = sheet.getDataRange().getValues();
   for (let i = 1; i < data.length; i++) {
     if (data[i][0] === code && data[i][1].toLowerCase() === email.toLowerCase()) {
-      return; // Already exists
+      return;
     }
   }
   
@@ -301,78 +295,118 @@ function getParticipants(code) {
 
 function sendRoomEmail(email, name, code, isHost) {
   const subject = isHost 
-    ? '🎬 Your Watch Party Room is Ready!'
-    : '🎬 You\'re Invited to a Watch Party!';
+    ? 'Your Watch Party Room is Ready'
+    : 'You\'re Invited to a Watch Party';
   
-  const htmlBody = `
-<!DOCTYPE html>
+  const actionText = isHost 
+    ? 'Your room is ready. Share this code with your friends:'
+    : 'You\'ve been invited to watch together!';
+  
+  const joinUrl = APP_URL + '/?room=' + code + '&email=' + encodeURIComponent(email);
+  
+  const htmlBody = `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 </head>
-<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #0a0a0f; color: #ffffff;">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width: 480px; margin: 0 auto; padding: 40px 20px;">
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #111111;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #111111;">
     <tr>
-      <td style="text-align: center; padding-bottom: 32px;">
-        <h1 style="margin: 0; font-size: 28px; font-weight: 700; color: #ffffff;">
-          🎬 Watch Party
-        </h1>
-      </td>
-    </tr>
-    <tr>
-      <td style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border-radius: 16px; padding: 32px; text-align: center;">
-        <p style="margin: 0 0 8px 0; font-size: 16px; color: #a0a0a0;">
-          Hey ${name}!
-        </p>
-        <p style="margin: 0 0 24px 0; font-size: 18px; color: #ffffff;">
-          ${isHost ? 'Your room is ready. Share this code with friends:' : 'You\'ve been invited! Use this code to join:'}
-        </p>
-        
-        <div style="background: #0a0a0f; border-radius: 12px; padding: 24px; margin-bottom: 24px;">
-          <p style="margin: 0 0 8px 0; font-size: 12px; text-transform: uppercase; letter-spacing: 2px; color: #666;">
-            Room Code
-          </p>
-          <p style="margin: 0; font-size: 42px; font-weight: 700; letter-spacing: 8px; color: #6366f1; font-family: 'SF Mono', 'Fira Code', monospace;">
-            ${code}
-          </p>
-        </div>
-        
-        <a href="https://your-app.netlify.app/?room=${code}&email=${encodeURIComponent(email)}" 
-           style="display: inline-block; background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); color: #ffffff; text-decoration: none; padding: 16px 32px; border-radius: 8px; font-size: 16px; font-weight: 600;">
-          Join Watch Party →
-        </a>
-        
-        <p style="margin: 24px 0 0 0; font-size: 13px; color: #666;">
-          Room expires in 24 hours
-        </p>
-      </td>
-    </tr>
-    <tr>
-      <td style="text-align: center; padding-top: 24px;">
-        <p style="margin: 0; font-size: 12px; color: #444;">
-          Powered by Divergent Inc.
-        </p>
+      <td align="center" style="padding: 48px 24px;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width: 420px;">
+          
+          <!-- Logo -->
+          <tr>
+            <td align="center" style="padding-bottom: 40px;">
+              <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                <tr>
+                  <td style="background-color: #6366f1; width: 44px; height: 44px; border-radius: 10px; text-align: center; vertical-align: middle; font-size: 20px; color: #ffffff;">
+                    &#9654;
+                  </td>
+                  <td style="padding-left: 14px; font-size: 22px; font-weight: 700; color: #ffffff;">
+                    Watch Party
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          
+          <!-- Main Card -->
+          <tr>
+            <td style="background-color: #1c1c1c; border-radius: 16px; border: 1px solid #2a2a2a;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                <tr>
+                  <td style="padding: 40px 32px;">
+                    
+                    <!-- Greeting -->
+                    <p style="margin: 0 0 8px 0; font-size: 14px; color: #888888; text-align: center;">
+                      Hey ${name},
+                    </p>
+                    <p style="margin: 0 0 32px 0; font-size: 17px; color: #ffffff; text-align: center; line-height: 1.6;">
+                      ${actionText}
+                    </p>
+                    
+                    <!-- Code Box -->
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-bottom: 32px;">
+                      <tr>
+                        <td style="background-color: #111111; border-radius: 12px; padding: 28px 24px; text-align: center; border: 1px solid #333333;">
+                          <p style="margin: 0 0 12px 0; font-size: 10px; text-transform: uppercase; letter-spacing: 2px; color: #666666; font-weight: 600;">
+                            Room Code
+                          </p>
+                          <p style="margin: 0; font-size: 32px; font-weight: 700; letter-spacing: 6px; color: #818cf8; font-family: 'Courier New', Courier, monospace;">
+                            ${code}
+                          </p>
+                        </td>
+                      </tr>
+                    </table>
+                    
+                    <!-- CTA Button -->
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                      <tr>
+                        <td align="center">
+                          <a href="${joinUrl}" style="display: inline-block; background-color: #6366f1; color: #ffffff; text-decoration: none; padding: 14px 36px; border-radius: 8px; font-size: 14px; font-weight: 600;">
+                            Join Watch Party
+                          </a>
+                        </td>
+                      </tr>
+                    </table>
+                    
+                    <!-- Expiry -->
+                    <p style="margin: 28px 0 0 0; font-size: 12px; color: #555555; text-align: center;">
+                      This room expires in 24 hours
+                    </p>
+                    
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          
+          <!-- Footer -->
+          <tr>
+            <td align="center" style="padding-top: 32px;">
+              <p style="margin: 0; font-size: 11px; color: #444444;">
+                Powered by <a href="https://divergentbiz.com" style="color: #6366f1; text-decoration: none;">Divergent Inc.</a>
+              </p>
+            </td>
+          </tr>
+          
+        </table>
       </td>
     </tr>
   </table>
 </body>
-</html>
-  `;
+</html>`;
   
-  const textBody = `
-Hey ${name}!
-
-${isHost ? 'Your Watch Party room is ready!' : 'You\'ve been invited to a Watch Party!'}
-
-Your Room Code: ${code}
-
-Join here: https://your-app.netlify.app/?room=${code}&email=${encodeURIComponent(email)}
-
-Room expires in 24 hours.
-
-- Watch Party by Divergent Inc.
-  `;
+  const textBody = 'Hey ' + name + ',\n\n' + 
+    actionText + '\n\n' +
+    'Room Code: ' + code + '\n\n' +
+    'Join here: ' + joinUrl + '\n\n' +
+    'This room expires in 24 hours.\n\n' +
+    '---\n' +
+    'Watch Party by Divergent Inc.\n' +
+    'https://divergentbiz.com';
   
   GmailApp.sendEmail(email, subject, textBody, {
     htmlBody: htmlBody,
@@ -392,23 +426,20 @@ function cleanupExpiredRooms() {
   const data = sheet.getDataRange().getValues();
   const now = new Date();
   
-  // Find rows to delete (from bottom up to preserve indices)
   const rowsToDelete = [];
   for (let i = data.length - 1; i >= 1; i--) {
     const expiresAt = new Date(data[i][4]);
     if (expiresAt < now) {
-      rowsToDelete.push(i + 1); // 1-indexed
+      rowsToDelete.push(i + 1);
     }
   }
   
-  // Delete expired rooms
   rowsToDelete.forEach(row => sheet.deleteRow(row));
-  
-  Logger.log(`Cleaned up ${rowsToDelete.length} expired rooms`);
+  Logger.log('Cleaned up ' + rowsToDelete.length + ' expired rooms');
 }
 
 /**
- * Test function - create a test room
+ * Test function
  */
 function testCreateRoom() {
   const result = createRoom('test@example.com', 'Test User');
