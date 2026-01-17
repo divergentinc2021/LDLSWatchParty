@@ -1,5 +1,5 @@
 // ============================================
-// Watch Party - Main Application (v2 Simplified)
+// Watch Party - Main Application (v2 with Security)
 // ============================================
 
 import * as webrtc from './webrtc.js';
@@ -15,10 +15,13 @@ const APP_URL = window.location.origin;
 // ============================================
 
 let currentRoom = null;
+let currentToken = null;
+let currentPassword = null;
 let currentUser = null;
 let isHost = false;
 let canShareScreen = false;
-let participants = new Map(); // odId -> { name, isHost, canShare }
+let participants = new Map(); // odId -> { name, isHost, canShare, peerId }
+let bannedUsers = new Set(); // odIds that have been kicked
 let chatMessages = [];
 
 // ============================================
@@ -27,19 +30,23 @@ let chatMessages = [];
 
 const views = {
   landing: document.getElementById('view-landing'),
-  room: document.getElementById('view-room')
+  room: document.getElementById('view-room'),
+  kicked: document.getElementById('view-kicked')
 };
 
 // Landing
 const createForm = document.getElementById('create-form');
 const createName = document.getElementById('create-name');
+const createPassword = document.getElementById('create-password');
 const joinForm = document.getElementById('join-form');
 const inputCode = document.getElementById('input-code');
 const joinName = document.getElementById('join-name');
+const joinPassword = document.getElementById('join-password');
 
 // Room
 const headerRoomCode = document.getElementById('header-room-code');
 const hostBadge = document.getElementById('host-badge');
+const passwordBadge = document.getElementById('password-badge');
 const btnCopyRoom = document.getElementById('btn-copy-room');
 const btnLeave = document.getElementById('btn-leave');
 const participantCount = document.getElementById('participant-count');
@@ -58,6 +65,9 @@ const btnScreen = document.getElementById('btn-screen');
 const shareUrl = document.getElementById('share-url');
 const btnCopyLink = document.getElementById('btn-copy-link');
 
+// Kicked
+const btnBackHome = document.getElementById('btn-back-home');
+
 // Toast
 const toastContainer = document.getElementById('toast-container');
 
@@ -74,8 +84,29 @@ function generateRoomCode() {
   return code;
 }
 
+function generateToken() {
+  const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
+  let token = '';
+  for (let i = 0; i < 10; i++) {
+    token += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return token;
+}
+
 function generateUserId() {
   return Math.random().toString(36).substring(2, 10);
+}
+
+// Hash password for comparison (simple hash, not for production security)
+function hashPassword(password) {
+  if (!password) return null;
+  let hash = 0;
+  for (let i = 0; i < password.length; i++) {
+    const char = password.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  return hash.toString(36);
 }
 
 function showView(viewName) {
@@ -84,9 +115,9 @@ function showView(viewName) {
   });
   
   // Update URL
-  if (viewName === 'room' && currentRoom) {
-    window.history.pushState({ room: currentRoom }, '', `/${currentRoom}`);
-  } else if (viewName === 'landing') {
+  if (viewName === 'room' && currentRoom && currentToken) {
+    window.history.pushState({ room: currentRoom }, '', `/${currentRoom}-${currentToken}`);
+  } else if (viewName === 'landing' || viewName === 'kicked') {
     window.history.pushState({}, '', '/');
   }
 }
@@ -110,15 +141,23 @@ function formatTime(timestamp) {
   return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+function getShareableUrl() {
+  return `${APP_URL}/${currentRoom}-${currentToken}`;
+}
+
 // ============================================
 // Room Management
 // ============================================
 
-async function createRoom(userName) {
+async function createRoom(userName, password) {
   const roomCode = generateRoomCode();
+  const token = generateToken();
   const odId = generateUserId();
+  const passwordHash = hashPassword(password);
   
   currentRoom = roomCode;
+  currentToken = token;
+  currentPassword = passwordHash;
   currentUser = { id: odId, name: userName };
   isHost = true;
   canShareScreen = true;
@@ -127,44 +166,60 @@ async function createRoom(userName) {
   sessionStorage.setItem('wp_session', JSON.stringify({
     odId,
     room: roomCode,
+    token: token,
+    passwordHash: passwordHash,
     name: userName,
     isHost: true
   }));
   
-  await enterRoom(roomCode, odId, userName, true);
+  await enterRoom(roomCode, token, odId, userName, true, passwordHash);
 }
 
-async function joinRoom(roomCode, userName) {
+async function joinRoom(roomCode, userName, password) {
   const normalizedCode = roomCode.toUpperCase().trim();
   const odId = generateUserId();
+  const passwordHash = hashPassword(password);
   
   currentRoom = normalizedCode;
   currentUser = { id: odId, name: userName };
   isHost = false;
   canShareScreen = false;
   
-  // Store session
+  // Token will be received from host via WebRTC
+  // For now, we need to connect and validate
+  
+  // Store partial session (token comes from URL or host)
   sessionStorage.setItem('wp_session', JSON.stringify({
     odId,
     room: normalizedCode,
+    token: currentToken, // May be null if joining via code
+    passwordHash: passwordHash,
     name: userName,
     isHost: false
   }));
   
-  await enterRoom(normalizedCode, odId, userName, false);
+  await enterRoom(normalizedCode, currentToken, odId, userName, false, passwordHash);
 }
 
-async function enterRoom(roomCode, odId, userName, hostStatus) {
+async function enterRoom(roomCode, token, odId, userName, hostStatus, passwordHash) {
   console.log('Entering room:', roomCode, 'as', userName, 'host:', hostStatus);
   
   isHost = hostStatus;
   canShareScreen = hostStatus;
+  currentToken = token;
+  currentPassword = passwordHash;
   
   // Update UI
   headerRoomCode.textContent = roomCode;
-  shareUrl.textContent = `${APP_URL}/${roomCode}`;
   hostBadge.classList.toggle('hidden', !isHost);
+  passwordBadge.classList.toggle('hidden', !passwordHash);
   btnScreen.disabled = !canShareScreen;
+  
+  if (token) {
+    shareUrl.textContent = `${APP_URL}/${roomCode}-${token}`;
+  } else {
+    shareUrl.textContent = `Code: ${roomCode}`;
+  }
   
   if (isHost) {
     screenPlaceholderText.textContent = 'Click "Screen" to share your screen';
@@ -189,28 +244,10 @@ async function enterRoom(roomCode, odId, userName, hostStatus) {
       },
       onConnection: (peerId, peerData) => {
         console.log('Peer connected:', peerId, peerData);
-        if (peerData) {
-          participants.set(peerData.odId || peerId, {
-            name: peerData.name || 'Guest',
-            isHost: peerData.isHost || false,
-            canShare: peerData.canShare || false,
-            peerId: peerId
-          });
-          updateParticipantsList();
-          addSystemMessage(`${peerData.name || 'Guest'} joined`);
-        }
+        handlePeerConnection(peerId, peerData);
       },
       onDisconnection: (peerId) => {
-        // Find and remove participant by peerId
-        for (const [id, data] of participants) {
-          if (data.peerId === peerId) {
-            addSystemMessage(`${data.name} left`);
-            participants.delete(id);
-            break;
-          }
-        }
-        removeRemoteVideo(peerId);
-        updateParticipantsList();
+        handlePeerDisconnection(peerId);
       },
       onRemoteStream: (peerId, stream) => {
         addRemoteVideo(peerId, stream);
@@ -220,7 +257,6 @@ async function enterRoom(roomCode, odId, userName, hostStatus) {
         screenVideo.classList.add('has-stream');
         screenPlaceholder.classList.add('hidden');
         
-        // When remote screen share ends
         stream.getVideoTracks()[0].onended = () => {
           screenVideo.srcObject = null;
           screenVideo.classList.remove('has-stream');
@@ -231,14 +267,17 @@ async function enterRoom(roomCode, odId, userName, hostStatus) {
         addChatMessage(data.displayName, data.text, data.timestamp);
       },
       onControlMessage: (peerId, data) => {
-        handleControlMessage(data);
+        handleControlMessage(peerId, data);
       }
     });
     
     await webrtc.initPeer(roomCode, odId, {
       name: userName,
+      odId: odId,
       isHost: hostStatus,
-      canShare: canShareScreen
+      canShare: canShareScreen,
+      passwordHash: passwordHash,
+      token: token
     });
     
     showView('room');
@@ -251,14 +290,70 @@ async function enterRoom(roomCode, odId, userName, hostStatus) {
   }
 }
 
+function handlePeerConnection(peerId, peerData) {
+  if (!peerData) return;
+  
+  const incomingOdId = peerData.odId || peerId;
+  
+  // Host validates incoming connections
+  if (isHost) {
+    // Check if banned
+    if (bannedUsers.has(incomingOdId)) {
+      console.log('Rejecting banned user:', incomingOdId);
+      webrtc.sendControlMessage({ type: 'kicked', targetOdId: incomingOdId, reason: 'You have been banned from this room' });
+      return;
+    }
+    
+    // Check password if room has one
+    if (currentPassword && peerData.passwordHash !== currentPassword) {
+      console.log('Rejecting user with wrong password:', incomingOdId);
+      webrtc.sendControlMessage({ type: 'kicked', targetOdId: incomingOdId, reason: 'Incorrect password' });
+      return;
+    }
+    
+    // Send room info to new participant
+    webrtc.sendControlMessage({
+      type: 'roomInfo',
+      targetOdId: incomingOdId,
+      token: currentToken,
+      hasPassword: !!currentPassword
+    });
+  }
+  
+  participants.set(incomingOdId, {
+    name: peerData.name || 'Guest',
+    isHost: peerData.isHost || false,
+    canShare: peerData.canShare || false,
+    peerId: peerId
+  });
+  
+  updateParticipantsList();
+  addSystemMessage(`${peerData.name || 'Guest'} joined`);
+}
+
+function handlePeerDisconnection(peerId) {
+  for (const [id, data] of participants) {
+    if (data.peerId === peerId) {
+      addSystemMessage(`${data.name} left`);
+      participants.delete(id);
+      break;
+    }
+  }
+  removeRemoteVideo(peerId);
+  updateParticipantsList();
+}
+
 function leaveRoom() {
   webrtc.disconnect();
   
   currentRoom = null;
+  currentToken = null;
+  currentPassword = null;
   currentUser = null;
   isHost = false;
   canShareScreen = false;
   participants.clear();
+  bannedUsers.clear();
   chatMessages = [];
   
   sessionStorage.removeItem('wp_session');
@@ -297,24 +392,32 @@ function updateParticipantsList() {
     
     const isSelf = currentUser && currentUser.id === odId;
     
+    let actionsHtml = '';
+    if (isHost && !data.isHost && !isSelf) {
+      actionsHtml = `
+        <div class="participant-actions">
+          <button class="btn-grant-screen" data-od-id="${odId}" title="${data.canShare ? 'Revoke screen share' : 'Grant screen share'}">
+            ${data.canShare ? 'Revoke' : 'Screen'}
+          </button>
+          <button class="btn-kick" data-od-id="${odId}" title="Remove from room">
+            Kick
+          </button>
+        </div>
+      `;
+    }
+    
     item.innerHTML = `
       <div class="participant-info">
         <span class="participant-name">${escapeHtml(data.name)}${isSelf ? ' (You)' : ''}</span>
         ${data.isHost ? '<span class="participant-host-tag">Host</span>' : ''}
       </div>
-      ${isHost && !data.isHost && !isSelf ? `
-        <div class="participant-actions">
-          <button class="btn-grant-screen" data-od-id="${odId}" title="Grant screen share">
-            ${data.canShare ? 'Revoke Screen' : 'Grant Screen'}
-          </button>
-        </div>
-      ` : ''}
+      ${actionsHtml}
     `;
     
     participantsList.appendChild(item);
   });
   
-  // Add click handlers for grant/revoke buttons
+  // Grant/Revoke screen share
   participantsList.querySelectorAll('.btn-grant-screen').forEach(btn => {
     btn.addEventListener('click', () => {
       const targetOdId = btn.dataset.odId;
@@ -324,7 +427,6 @@ function updateParticipantsList() {
         participant.canShare = newCanShare;
         updateParticipantsList();
         
-        // Send control message to peer
         webrtc.sendControlMessage({
           type: 'screenPermission',
           targetOdId: targetOdId,
@@ -335,13 +437,77 @@ function updateParticipantsList() {
       }
     });
   });
+  
+  // Kick button
+  participantsList.querySelectorAll('.btn-kick').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const targetOdId = btn.dataset.odId;
+      kickParticipant(targetOdId);
+    });
+  });
 }
 
-function handleControlMessage(data) {
-  if (data.type === 'screenPermission' && data.targetOdId === currentUser?.id) {
-    canShareScreen = data.canShare;
-    btnScreen.disabled = !canShareScreen;
-    showToast(canShareScreen ? 'You can now share your screen' : 'Screen share permission revoked', 'info');
+function kickParticipant(targetOdId) {
+  const participant = participants.get(targetOdId);
+  if (!participant || !isHost) return;
+  
+  // Add to ban list
+  bannedUsers.add(targetOdId);
+  
+  // Send kick message
+  webrtc.sendControlMessage({
+    type: 'kicked',
+    targetOdId: targetOdId,
+    reason: 'You have been removed by the host'
+  });
+  
+  // Remove from local participants
+  addSystemMessage(`${participant.name} was removed`);
+  participants.delete(targetOdId);
+  
+  // Close connection
+  if (participant.peerId) {
+    removeRemoteVideo(participant.peerId);
+  }
+  
+  updateParticipantsList();
+  showToast(`Removed ${participant.name}`, 'success');
+}
+
+function handleControlMessage(peerId, data) {
+  console.log('Control message:', data);
+  
+  switch (data.type) {
+    case 'screenPermission':
+      if (data.targetOdId === currentUser?.id) {
+        canShareScreen = data.canShare;
+        btnScreen.disabled = !canShareScreen;
+        showToast(canShareScreen ? 'You can now share your screen' : 'Screen share permission revoked', 'info');
+      }
+      break;
+      
+    case 'kicked':
+      if (data.targetOdId === currentUser?.id) {
+        webrtc.disconnect();
+        showView('kicked');
+      }
+      break;
+      
+    case 'roomInfo':
+      if (data.targetOdId === currentUser?.id) {
+        // Received room info from host
+        if (data.token && !currentToken) {
+          currentToken = data.token;
+          shareUrl.textContent = getShareableUrl();
+          
+          // Update session
+          const session = JSON.parse(sessionStorage.getItem('wp_session') || '{}');
+          session.token = data.token;
+          sessionStorage.setItem('wp_session', JSON.stringify(session));
+        }
+        passwordBadge.classList.toggle('hidden', !data.hasPassword);
+      }
+      break;
   }
 }
 
@@ -364,7 +530,6 @@ function addRemoteVideo(peerId, stream) {
     const nameEl = document.createElement('span');
     nameEl.className = 'webcam-name';
     
-    // Find participant name
     let peerName = 'Guest';
     for (const [id, data] of participants) {
       if (data.peerId === peerId) {
@@ -426,10 +591,12 @@ function renderChatMessages() {
 createForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const name = createName.value.trim();
+  const password = createPassword.value;
+  
   if (!name) return;
   
   createForm.querySelector('button').disabled = true;
-  await createRoom(name);
+  await createRoom(name, password);
   createForm.querySelector('button').disabled = false;
 });
 
@@ -438,20 +605,21 @@ joinForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const code = inputCode.value.trim();
   const name = joinName.value.trim();
+  const password = joinPassword.value;
   
   if (!code || code.length !== 5 || !name) {
-    showToast('Please enter a valid code and your name', 'error');
+    showToast('Please enter a valid 5-character code and your name', 'error');
     return;
   }
   
   joinForm.querySelector('button').disabled = true;
-  await joinRoom(code, name);
+  await joinRoom(code, name, password);
   joinForm.querySelector('button').disabled = false;
 });
 
 // Auto-uppercase room code
 inputCode.addEventListener('input', (e) => {
-  e.target.value = e.target.value.toUpperCase();
+  e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
 });
 
 // Chat
@@ -538,22 +706,32 @@ btnScreen.addEventListener('click', async () => {
 
 // Copy link
 btnCopyRoom.addEventListener('click', () => {
-  navigator.clipboard.writeText(`${APP_URL}/${currentRoom}`);
-  showToast('Link copied!', 'success');
+  const url = currentToken ? getShareableUrl() : `Room Code: ${currentRoom}`;
+  navigator.clipboard.writeText(currentToken ? getShareableUrl() : currentRoom);
+  showToast('Copied!', 'success');
 });
 
 btnCopyLink.addEventListener('click', () => {
-  navigator.clipboard.writeText(`${APP_URL}/${currentRoom}`);
-  showToast('Link copied!', 'success');
+  if (currentToken) {
+    navigator.clipboard.writeText(getShareableUrl());
+    showToast('Link copied!', 'success');
+  } else {
+    navigator.clipboard.writeText(currentRoom);
+    showToast('Code copied!', 'success');
+  }
 });
 
 // Leave room
 btnLeave.addEventListener('click', leaveRoom);
 
+// Back home from kicked
+btnBackHome.addEventListener('click', () => {
+  showView('landing');
+});
+
 // Handle browser back/forward
 window.addEventListener('popstate', (e) => {
   if (e.state?.room && !currentRoom) {
-    // Try to rejoin
     checkUrlAndSession();
   } else if (!e.state?.room && currentRoom) {
     leaveRoom();
@@ -565,21 +743,27 @@ window.addEventListener('popstate', (e) => {
 // ============================================
 
 async function checkUrlAndSession() {
-  // Check URL for room code
   const path = window.location.pathname;
-  const match = path.match(/^\/([A-Z0-9]{5})$/i);
   
-  if (match) {
-    const roomCode = match[1].toUpperCase();
+  // Match /XXXXX-xxxxxxxxxx (code-token) or /XXXXX (code only)
+  const fullMatch = path.match(/^\/([A-Z0-9]{5})-([a-z0-9]{10})$/i);
+  const codeMatch = path.match(/^\/([A-Z0-9]{5})$/i);
+  
+  if (fullMatch) {
+    // URL has both code and token
+    const roomCode = fullMatch[1].toUpperCase();
+    const token = fullMatch[2].toLowerCase();
+    
+    currentToken = token;
     
     // Check for existing session
     const sessionData = sessionStorage.getItem('wp_session');
     if (sessionData) {
       try {
         const session = JSON.parse(sessionData);
-        if (session.room === roomCode) {
+        if (session.room === roomCode && session.token === token) {
           // Rejoin with existing session
-          await enterRoom(session.room, session.odId, session.name, session.isHost);
+          await enterRoom(session.room, session.token, session.odId, session.name, session.isHost, session.passwordHash);
           return true;
         }
       } catch (e) {
@@ -587,7 +771,15 @@ async function checkUrlAndSession() {
       }
     }
     
-    // New join - pre-fill code and show landing
+    // New join via link - show join form with code pre-filled
+    inputCode.value = roomCode;
+    joinName.focus();
+    showView('landing');
+    return true;
+    
+  } else if (codeMatch) {
+    // URL has code only (someone typed it manually)
+    const roomCode = codeMatch[1].toUpperCase();
     inputCode.value = roomCode;
     joinName.focus();
     showView('landing');
