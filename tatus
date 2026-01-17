@@ -1,0 +1,5 @@
+[33m70a60d1[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m feat: PWA, notifications, role system, cleaner focus mode
+[33m9ca4cbd[m updated js
+[33m82e0533[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m feat: implement Theater Mode with PiP webcams
+[33mab658ee[m feat: implement lobby system with direct link access
+[33m2d9ee58[m fix: implement peer discovery so participants can see each other
