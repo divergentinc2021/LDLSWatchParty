@@ -34,13 +34,76 @@
   <!-- Defer non-critical JetBrains Mono font -->
   <link rel="preload" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
   
+  <!-- Early route detection - MUST be before CSS to prevent flash -->
+  <script>
+    (function() {
+      var path = window.location.pathname;
+      if (/^\/[A-Z0-9]{5}-[a-z0-9]{12}$/i.test(path)) {
+        document.documentElement.classList.add('direct-link');
+      }
+    })();
+  </script>
+  <!-- Critical CSS for direct links - hide views until JS takes over -->
+  <style>
+    html.direct-link .view { display: none !important; }
+    html.direct-link #loading-screen { display: flex !important; }
+  </style>
+  
   <link rel="stylesheet" href="../src/css/styles.css">
 </head>
 <body>
+  <!-- PWA Install Prompt Banner (Android/Desktop) -->
+  <div id="install-prompt" class="install-prompt hidden">
+    <div class="install-prompt-content">
+      <div class="install-prompt-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="32" height="32">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="7 10 12 15 17 10"></polyline>
+          <line x1="12" y1="15" x2="12" y2="3"></line>
+        </svg>
+      </div>
+      <div class="install-prompt-text">
+        <strong>Install Watch Party</strong>
+        <span>Add to home screen for the best experience</span>
+      </div>
+      <div class="install-prompt-actions">
+        <button id="install-prompt-btn" class="btn btn-primary btn-sm">Install</button>
+        <button id="install-prompt-dismiss" class="btn btn-ghost btn-sm">Not now</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PWA Install Prompt (iOS) -->
+  <div id="install-prompt-ios" class="install-prompt hidden">
+    <div class="install-prompt-content">
+      <div class="install-prompt-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="32" height="32">
+          <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
+          <line x1="12" y1="18" x2="12.01" y2="18"></line>
+        </svg>
+      </div>
+      <div class="install-prompt-text">
+        <strong>Install Watch Party</strong>
+        <span>Tap <strong>Share</strong> then <strong>"Add to Home Screen"</strong></span>
+      </div>
+      <div class="install-prompt-actions">
+        <button id="install-prompt-ios-dismiss" class="btn btn-ghost btn-sm">Got it</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Loading Screen for direct links -->
+  <div id="loading-screen" class="loading-screen hidden">
+    <div class="loading-content">
+      <div class="loading-spinner"></div>
+      <span>Joining room...</span>
+    </div>
+  </div>
+
   <div id="app">
     
     <!-- Landing View -->
-    <section id="view-landing" class="view active">
+    <section id="view-landing" class="view">
       <div class="landing">
         <header class="landing-header">
           <div class="logo">
@@ -226,7 +289,7 @@
             
             <!-- Screen Share Container -->
             <div class="screen-container" id="screen-container">
-              <video id="screen-video" autoplay playsinline></video>
+              <video id="screen-video" autoplay playsinline muted></video>
               
               <!-- PiP Button -->
               <button id="btn-pip" class="btn-pip" title="Picture-in-Picture (Always on top)" aria-label="Picture-in-Picture">

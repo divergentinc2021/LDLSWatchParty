@@ -121,11 +121,18 @@ async function init() {
   // Check URL for room link
   const path = window.location.pathname;
   const match = path.match(/^\/([A-Z0-9]{5})-([a-z0-9]{12})$/i);
+  const loadingScreen = document.getElementById('loading-screen');
   
   if (match) {
+    // Show loading screen while validating room
+    loadingScreen?.classList.remove('hidden');
+    
     const code = match[1].toUpperCase();
     const token = match[2];
     await handleDirectLink(code, token);
+    
+    // Hide loading screen after handling
+    loadingScreen?.classList.add('hidden');
   } else {
     showView('landing');
     fetchActiveSessionCount();
@@ -146,12 +153,58 @@ function registerServiceWorker() {
 }
 
 function setupPWAInstall() {
+  const installPrompt = document.getElementById('install-prompt');
+  const installPromptBtn = document.getElementById('install-prompt-btn');
+  const installPromptDismiss = document.getElementById('install-prompt-dismiss');
+  const installPromptIOS = document.getElementById('install-prompt-ios');
+  const installPromptIOSDismiss = document.getElementById('install-prompt-ios-dismiss');
+  
+  // Check if already installed
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches 
+                       || window.navigator.standalone === true;
+  
+  if (isStandalone) {
+    console.log('✅ Running as installed PWA');
+    return; // Don't show install prompts
+  }
+  
+  // Detect iOS (iPhone, iPad, iPod)
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
+                (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  
+  if (isIOS) {
+    // iOS doesn't support beforeinstallprompt - show manual instructions
+    setTimeout(() => {
+      if (localStorage.getItem('pwa-install-ios-dismissed') !== 'true') {
+        installPromptIOS?.classList.remove('hidden');
+      }
+    }, 5000);
+    
+    installPromptIOSDismiss?.addEventListener('click', () => {
+      installPromptIOS?.classList.add('hidden');
+      localStorage.setItem('pwa-install-ios-dismissed', 'true');
+    });
+    return;
+  }
+  
+  // Android/Desktop - use beforeinstallprompt
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     deferredInstallPrompt = e;
+    
+    // Show the small button immediately
     btnInstall?.classList.remove('hidden');
+    
+    // Show the banner after a delay (let user interact first)
+    setTimeout(() => {
+      // Only show if not dismissed before
+      if (localStorage.getItem('pwa-install-dismissed') !== 'true') {
+        installPrompt?.classList.remove('hidden');
+      }
+    }, 5000);
   });
   
+  // Small button in header
   btnInstall?.addEventListener('click', async () => {
     if (!deferredInstallPrompt) return;
     deferredInstallPrompt.prompt();
@@ -159,11 +212,30 @@ function setupPWAInstall() {
     console.log('Install result:', result.outcome);
     deferredInstallPrompt = null;
     btnInstall.classList.add('hidden');
+    installPrompt?.classList.add('hidden');
+  });
+  
+  // Banner install button
+  installPromptBtn?.addEventListener('click', async () => {
+    if (!deferredInstallPrompt) return;
+    deferredInstallPrompt.prompt();
+    const result = await deferredInstallPrompt.userChoice;
+    console.log('Install result:', result.outcome);
+    deferredInstallPrompt = null;
+    btnInstall?.classList.add('hidden');
+    installPrompt?.classList.add('hidden');
+  });
+  
+  // Banner dismiss button
+  installPromptDismiss?.addEventListener('click', () => {
+    installPrompt?.classList.add('hidden');
+    localStorage.setItem('pwa-install-dismissed', 'true');
   });
   
   window.addEventListener('appinstalled', () => {
     console.log('✅ PWA installed');
     btnInstall?.classList.add('hidden');
+    installPrompt?.classList.add('hidden');
   });
 }
 
@@ -969,6 +1041,26 @@ function showRemoteScreenShare(peerId, stream) {
   screenVideo.srcObject = stream;
   screenVideo.classList.add('has-stream');
   screenPlaceholder?.classList.add('hidden');
+  
+  // Handle autoplay - browsers may block videos with audio
+  const playPromise = screenVideo.play();
+  if (playPromise !== undefined) {
+    playPromise.catch(err => {
+      console.log('Autoplay blocked, trying muted:', err);
+      // Try playing muted first, then unmute after user interaction
+      screenVideo.muted = true;
+      screenVideo.play().then(() => {
+        // Show toast to let user know they need to click for audio
+        showToast('Click video for audio', 'info');
+        // Add one-time click handler to unmute
+        const unmuteHandler = () => {
+          screenVideo.muted = false;
+          screenVideo.removeEventListener('click', unmuteHandler);
+        };
+        screenVideo.addEventListener('click', unmuteHandler);
+      }).catch(e => console.error('Video play failed:', e));
+    });
+  }
   
   if (!focusMode) toggleFocusMode();
 }
