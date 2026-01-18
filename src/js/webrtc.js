@@ -269,17 +269,44 @@ function callPeer(remotePeerId, stream, type = 'camera') {
  * Handle incoming call
  */
 function handleIncomingCall(call) {
-  console.log('📥 Incoming call from:', call.peer, 'type:', call.metadata?.type);
+  console.log('📥 Incoming call from:', call.peer);
+  console.log('📥 Call metadata:', JSON.stringify(call.metadata));
   
   call.answer(localStream || undefined);
   
   call.on('stream', (remoteStream) => {
-    const type = call.metadata?.type || 'camera';
+    // Try to detect stream type from metadata first
+    let type = call.metadata?.type;
+    
+    // If no metadata type, try to detect if it's a screen share from track settings
+    if (!type) {
+      const videoTrack = remoteStream.getVideoTracks()[0];
+      if (videoTrack) {
+        const settings = videoTrack.getSettings();
+        // Screen shares typically have displaySurface set, or larger dimensions
+        if (settings.displaySurface || 
+            (settings.width && settings.width > 1000) ||
+            videoTrack.label?.toLowerCase().includes('screen')) {
+          type = 'screen';
+          console.log('📺 Auto-detected screen share from track settings:', settings);
+        } else {
+          type = 'camera';
+        }
+      } else {
+        type = 'camera';
+      }
+    }
+    
+    console.log(`📥 Stream received! Type: ${type}, Tracks: ${remoteStream.getTracks().length}`);
     handleRemoteStream(call.peer, remoteStream, type);
   });
   
   call.on('close', () => {
     console.log('Incoming call closed from:', call.peer);
+  });
+  
+  call.on('error', (err) => {
+    console.error('❌ Incoming call error:', err);
   });
   
   if (!connections.has(call.peer)) {
