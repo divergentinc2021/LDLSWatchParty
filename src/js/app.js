@@ -178,7 +178,7 @@ function setupPWAInstall() {
       if (localStorage.getItem('pwa-install-ios-dismissed') !== 'true') {
         installPromptIOS?.classList.remove('hidden');
       }
-    }, 5000);
+    }, 3000); // Show after 3 seconds
     
     installPromptIOSDismiss?.addEventListener('click', () => {
       installPromptIOS?.classList.add('hidden');
@@ -201,7 +201,7 @@ function setupPWAInstall() {
       if (localStorage.getItem('pwa-install-dismissed') !== 'true') {
         installPrompt?.classList.remove('hidden');
       }
-    }, 5000);
+    }, 3000); // Show after 3 seconds
   });
   
   // Small button in header
@@ -226,10 +226,26 @@ function setupPWAInstall() {
     installPrompt?.classList.add('hidden');
   });
   
-  // Banner dismiss button
+  // Modal dismiss button
   installPromptDismiss?.addEventListener('click', () => {
     installPrompt?.classList.add('hidden');
     localStorage.setItem('pwa-install-dismissed', 'true');
+  });
+  
+  // Close modal when clicking backdrop
+  installPrompt?.addEventListener('click', (e) => {
+    if (e.target === installPrompt) {
+      installPrompt.classList.add('hidden');
+      localStorage.setItem('pwa-install-dismissed', 'true');
+    }
+  });
+  
+  // Close iOS modal when clicking backdrop
+  installPromptIOS?.addEventListener('click', (e) => {
+    if (e.target === installPromptIOS) {
+      installPromptIOS.classList.add('hidden');
+      localStorage.setItem('pwa-install-ios-dismissed', 'true');
+    }
   });
   
   window.addEventListener('appinstalled', () => {
@@ -1100,3 +1116,4 @@ function showToast(message, type = 'info') {
   container?.appendChild(toast);
   setTimeout(() => toast.remove(), 4000);
 }
+
