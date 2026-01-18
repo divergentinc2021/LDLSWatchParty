@@ -7,22 +7,13 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbzGSfmG-uWUd-9WYc99JcBD
 // ============================================
 // Email API Configuration
 // ============================================
-// Option 1: Cloudflare Pages function (uses Resend API) - RECOMMENDED
-// Option 2: PHP endpoint (host on your own server)
+// Email is handled by Apps Script backend using GmailApp.sendEmail()
+// Sends from your Google Workspace account (laurent@divergentbiz.com)
+// No additional configuration needed - it just works!
 const EMAIL_CONFIG = {
-  // Set to 'cloudflare', 'php', or 'disabled'
-  provider: 'cloudflare',
-  
-  // Cloudflare endpoint (uses Resend API - needs RESEND_API_KEY env var)
-  cloudflare: {
-    endpoint: '/api/send-email'
-  },
-  
-  // PHP endpoint settings (alternative if you have PHP hosting)
-  php: {
-    endpoint: 'https://yourdomain.com/api/sendmail.php',
-    apiKey: 'watchparty-email-2026-secure'
-  }
+  // Apps Script handles email automatically on createRoom/joinRoom
+  // Set to 'disabled' to avoid duplicate emails
+  provider: 'disabled'
 };
 
 // ============================================
