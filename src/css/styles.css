@@ -10,7 +10,7 @@
   
   --text-primary: #fafafa;
   --text-secondary: #a1a1aa;
-  --text-muted: #71717a;
+  --text-muted: #8b8b96;
   
   --accent: #6366f1;
   --accent-hover: #818cf8;
@@ -429,7 +429,8 @@ a:hover { color: var(--accent-hover); }
   .share-link-bar { flex-wrap: wrap; }
 }
 
- / *   A c t i v e   S e s s i o n s   B a d g e   * /  
+ / *   A c t i v e   S e s s i o n s   B a d g e   * / 
+ 
  
 /* Active Sessions Badge */
 .active-sessions {

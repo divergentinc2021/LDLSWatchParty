@@ -76,7 +76,7 @@ export default defineConfig({
         const distDir = resolve(__dirname, 'dist');
         
         // Root files
-        ['_redirects', '_headers', 'manifest.json'].forEach(file => {
+        ['_redirects', '_headers', 'manifest.json', 'robots.txt'].forEach(file => {
           const src = resolve(publicDir, file);
           if (existsSync(src)) {
             copyFileSync(src, resolve(distDir, file));

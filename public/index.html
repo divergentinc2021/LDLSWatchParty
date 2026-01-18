@@ -200,7 +200,7 @@
             <span class="room-code-badge">
               <span id="header-room-code">XXXXX</span>
             </span>
-            <button id="btn-copy-room" class="btn-icon-sm" title="Copy link">
+            <button id="btn-copy-room" class="btn-icon-sm" title="Copy link" aria-label="Copy room link">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
@@ -229,7 +229,7 @@
               <video id="screen-video" autoplay playsinline></video>
               
               <!-- PiP Button -->
-              <button id="btn-pip" class="btn-pip" title="Picture-in-Picture (Always on top)">
+              <button id="btn-pip" class="btn-pip" title="Picture-in-Picture (Always on top)" aria-label="Picture-in-Picture">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <rect x="2" y="3" width="20" height="14" rx="2"></rect>
                   <rect x="11" y="9" width="9" height="7" rx="1" fill="currentColor"></rect>
@@ -237,7 +237,7 @@
               </button>
               
               <!-- Fullscreen Button -->
-              <button id="btn-fullscreen" class="btn-fullscreen" title="Fullscreen">
+              <button id="btn-fullscreen" class="btn-fullscreen" title="Fullscreen" aria-label="Toggle fullscreen">
                 <svg class="icon-expand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <polyline points="15 3 21 3 21 9"></polyline>
                   <polyline points="9 21 3 21 3 15"></polyline>
@@ -285,7 +285,7 @@
               <div id="chat-messages" class="chat-messages"></div>
               <form id="chat-form" class="chat-form">
                 <input type="text" id="chat-input" class="chat-input" placeholder="Type a message..." autocomplete="off">
-                <button type="submit" class="btn-icon" title="Send">
+                <button type="submit" class="btn-icon" title="Send" aria-label="Send message">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <line x1="22" y1="2" x2="11" y2="13"></line>
                     <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
@@ -297,7 +297,7 @@
         </main>
         
         <!-- Control Bar Toggle (in focus mode) -->
-        <button id="btn-toggle-controls" class="btn-toggle-controls" title="Show/Hide Controls">
+        <button id="btn-toggle-controls" class="btn-toggle-controls" title="Show/Hide Controls" aria-label="Toggle controls">
           <svg class="icon-up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="18 15 12 9 6 15"></polyline>
           </svg>

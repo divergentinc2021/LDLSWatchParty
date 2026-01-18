@@ -1,6 +1,9 @@
-# Watch Party - robots.txt
+# Allow all crawlers
 User-agent: *
 Allow: /
 
 # Sitemap
-Sitemap: https://ldlswatchparty.netlify.app/sitemap.xml
+Sitemap: https://ldlswatchparty.pages.dev/sitemap.xml
+
+# Disallow API paths
+Disallow: /api/

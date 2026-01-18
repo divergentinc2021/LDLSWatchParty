@@ -12,7 +12,7 @@ const PARTICIPANTS_SHEET = 'Participants';
 const ACTIVE_PEERS_SHEET = 'ActivePeers';
 const ROOM_EXPIRY_HOURS = 24;
 const PEER_TIMEOUT_SECONDS = 60;
-const APP_URL = 'https://ldlswatchparty.netlify.app';
+const APP_URL = 'https://ldlswatchparty.pages.dev';
 
 // ============================================
 // SETUP
