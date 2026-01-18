@@ -273,6 +273,10 @@ function showNotification(title, body, tag = 'chat') {
 // View Management
 // ============================================
 function showView(viewName) {
+  // Remove direct-link class to allow views to display
+  // (it was added in HTML to prevent flash on direct link navigation)
+  document.documentElement.classList.remove('direct-link');
+  
   Object.values(views).forEach(v => v?.classList.remove('active'));
   views[viewName]?.classList.add('active');
 }
